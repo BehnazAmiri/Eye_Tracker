@@ -11,10 +11,19 @@ import textwrap
 import time
 import threading
 import queue
+import gc
 from tkinter import ttk
 import matplotlib
+import numpy as np
+
+import traceback
+try:
+    import psutil
+except ImportError:
+    psutil = None
 import sys
 matplotlib.use('Agg')  # Use non-GUI backend for thread-safe figure creation
+import re
 
 try:
     import matplotlib.pyplot as plt
@@ -28,6 +37,12 @@ except ImportError:
     print("\n   pip install matplotlib seaborn\n")
     print("="*60)
     exit()
+# ✅ Force working directory to the script's folder (fix VSCode Run path issues)
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.getcwd())
+print(f"Working directory fixed to: {os.getcwd()}")
+import subprocess
+
 
 # ======================================================================================
 # >>> ADDED: LOGGING & UI HELPERS
@@ -45,6 +60,61 @@ class Logger:
 
     def flush(self):
         self.original_stdout.flush()
+
+
+# Helper functions for consistent display IDs (zero-padded) without changing filesystem IDs
+def _log_memory_usage(progress_queue, stage_message):
+    """Logs current memory usage if psutil is available."""
+    if psutil is not None and progress_queue is not None:
+        process = psutil.Process(os.getpid())
+        mem_info = process.memory_info()
+        mem_mb = mem_info.rss / (1024 * 1024)  # Resident Set Size in MB
+        progress_queue.put(("log", f"[{stage_message}] Memory usage: {mem_mb:.2f} MB"))
+def _extract_numeric_suffix(s):
+    """Return integer numeric suffix from a string (e.g., 'Q12' -> 12). If none, return a large number."""
+    try:
+        m = re.search(r"(\d+)", str(s))
+        return int(m.group(1)) if m else float('inf')
+    except Exception:
+        return float('inf')
+
+
+def display_participant(pid, width=2):
+    """Return a human-friendly participant label with zero-padded number.
+    Examples: 'participant_1' -> 'Participant 01', '1' -> 'Participant 01'
+    """
+    if isinstance(pid, str) and pid.startswith('participant_'):
+        try:
+            num = pid.split('_')[-1]
+            return f"Participant {str(int(num)).zfill(width)}"
+        except Exception:
+            return pid
+    if isinstance(pid, (int, float)) or (isinstance(pid, str) and pid.isdigit()):
+        try:
+            return f"Participant {str(int(pid)).zfill(width)}"
+        except Exception:
+            return str(pid)
+    return str(pid)
+
+
+def display_question(qid, width=2):
+    """Return a zero-padded question id string. Examples: 'Q1'->'Q01', '1'->'01', 'Q10'->'Q10'"""
+    if not isinstance(qid, str):
+        return str(qid)
+    # If starts with letter(s) followed by digits, pad the numeric part
+    m = re.match(r"^([A-Za-z_\-]*?)(\d+)$", qid)
+    if m:
+        prefix, num = m.group(1), m.group(2)
+        # If prefix is 'Q' or empty, return only the zero-padded numeric part (e.g., '01')
+        if prefix.lower() == 'q' or prefix == '':
+            return f"{num.zfill(width)}"
+        return f"{prefix}{num.zfill(width)}"
+    # fallback: try to find digits anywhere
+    m2 = re.search(r"(\d+)", qid)
+    if m2:
+        s = qid.replace(m2.group(1), m2.group(1).zfill(width))
+        return s
+    return qid
 
 monitor = None  # Global monitor instance
 
@@ -87,29 +157,62 @@ def load_config(config_path='config.ini'):
     return config
 
 
-def load_all_participant_data(output_dir):
-    """Loads and concatenates all participant CSV files from the output directory."""
-    all_files = glob.glob(os.path.join(output_dir, 'participant_*', 'Q*.csv'))
+def load_all_participant_data(output_dir, participant_ids=None, question_ids=None, usecols=None, dtypes=None):
+    """Loads and concatenates participant CSVs with optional filtering and lean dtypes."""
+    # اگر participant_ids داده شد، فقط همان پوشه‌ها را چک کن؛ وگرنه همه
+    if participant_ids:
+        candidate_dirs = [os.path.join(output_dir, pid) for pid in participant_ids]
+    else:
+        candidate_dirs = glob.glob(os.path.join(output_dir, 'participant_*'))
+
+    all_files = []
+    for pdir in candidate_dirs:
+        if not os.path.exists(pdir):
+            continue
+        files = glob.glob(os.path.join(pdir, 'Q*.csv'))
+        if question_ids:
+            # فقط Qهایی که انتخاب شدند
+            files = [f for f in files if os.path.basename(f).replace('.csv','') in question_ids]
+        all_files.extend(files)
+
     if not all_files:
-        print(f"Warning: No question CSV files (Q*.csv) found in {output_dir}. Please check the path in config.ini.")
+        print(f"Warning: No question CSV files matched the filters in {output_dir}.")
         return pd.DataFrame()
-        
+
     df_list = []
     for file in all_files:
         try:
             participant_id = os.path.basename(os.path.dirname(file))
-            question_id = os.path.basename(file).replace('.csv', '')
-            df = pd.read_csv(file)
+            question_id    = os.path.basename(file).replace('.csv', '')
+
+            # فقط ستون‌های لازم با dtype کم‌حجم
+            df = pd.read_csv(
+                file,
+                usecols=usecols,          # مثل ['BPOGX','BPOGY','FPOGS','BPOGV']
+                dtype=dtypes,             # مثل float32/int8
+                low_memory=False,
+                memory_map=True,
+                on_bad_lines='warn'
+            )
             df['participant_id'] = participant_id
-            df['question_id'] = question_id
+            df['question_id']    = question_id
             df_list.append(df)
         except Exception as e:
             print(f"Error reading {file}: {e}")
-            
+
     if not df_list:
         return pd.DataFrame()
-        
-    return pd.concat(df_list, ignore_index=True)
+
+    df = pd.concat(df_list, ignore_index=True)
+    del df_list
+
+    # شناسه‌ها را category کن تا RAM کم‌تر شود
+    for c in ['participant_id', 'question_id']:
+        if c in df.columns:
+            df[c] = df[c].astype('category')
+
+    return df
+
 
 
 def load_question_data(questions_path, output_dir):
@@ -227,11 +330,28 @@ def question_part_distribution(question_exams_dir, output_dir):
     if not rows:
         return pd.DataFrame(columns=['question_id', 'count_part1', 'count_part2', 'total'])
     df = pd.DataFrame(rows)
-    part_counts = df.pivot_table(index='question_id', columns='part', values='participant_id', aggfunc='nunique', fill_value=0)
-    part_counts = part_counts.rename(columns={'Part 1':'count_part1', 'Part 2':'count_part2'}) if 'Part 1' in part_counts.columns or 'Part 2' in part_counts.columns else part_counts
-    part_counts['count_part1'] = part_counts.get('count_part1', 0)
-    part_counts['count_part2'] = part_counts.get('count_part2', 0)
-    part_counts['total'] = part_counts['count_part1'] + part_counts['count_part2']
+    # pivot may be memory-heavy in some environments; guard with fallback
+    try:
+        part_counts = df.pivot_table(index='question_id', columns='part', values='participant_id', aggfunc='nunique', fill_value=0)
+        part_counts = part_counts.rename(columns={'Part 1':'count_part1', 'Part 2':'count_part2'}) if 'Part 1' in part_counts.columns or 'Part 2' in part_counts.columns else part_counts
+        part_counts['count_part1'] = part_counts.get('count_part1', 0)
+        part_counts['count_part2'] = part_counts.get('count_part2', 0)
+        part_counts['total'] = part_counts['count_part1'] + part_counts['count_part2']
+    except MemoryError:
+        # Fallback using groupby to avoid creating very large intermediate arrays
+        import traceback as _tb
+        reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
+        os.makedirs(reports_dir, exist_ok=True)
+        with open(os.path.join(reports_dir, 'memory_error_traceback.txt'), 'a', encoding='utf-8') as _f:
+            _f.write('\n--- MemoryError during part_counts pivot_table ---\n')
+            _f.write(_tb.format_exc())
+        grouped = df.groupby(['question_id', 'part'])['participant_id'].nunique().reset_index(name='count')
+        part_counts = grouped.pivot(index='question_id', columns='part', values='count').fillna(0)
+        part_counts = part_counts.rename(columns={'Part 1':'count_part1', 'Part 2':'count_part2'}) if 'Part 1' in part_counts.columns or 'Part 2' in part_counts.columns else part_counts
+        part_counts['count_part1'] = part_counts.get('count_part1', 0)
+        part_counts['count_part2'] = part_counts.get('count_part2', 0)
+        part_counts['total'] = part_counts['count_part1'] + part_counts['count_part2']
+
     return part_counts.reset_index()
 
 
@@ -279,7 +399,32 @@ def get_input_range():
             if k in config['Input']:
                 prev_plots[k] = config['Input'].getboolean(k, fallback=prev_plots[k])
 
+    # Headless mode: allow running without the GUI by setting an environment variable
+    # Example: set PIPELINE_HEADLESS=1 and ensure config.ini has the desired Input values.
+    if os.environ.get('PIPELINE_HEADLESS', '') == '1':
+        # Parse participant and question ranges from prev_participant/prev_question strings
+        def _parse_range(rstr):
+            try:
+                start, end = map(int, rstr.split('-'))
+                return range(start, end + 1)
+            except Exception:
+                return None
+
+        participants = _parse_range(prev_participant)
+        questions = _parse_range(prev_question)
+        # selected_plots currently stored in prev_plots dict
+        return participants, questions, prev_plots, prev_plots.get('save_stage_outputs', True)
+
     root = tk.Tk()
+    root.title("Input for Analysis")
+    root.geometry("340x480")
+
+    # ⬇️ همیشه بیار جلو و فوکوس بده
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(200, lambda: root.attributes("-topmost", False))
+    root.focus_force()
+
     root.title("Input for Analysis")
     root.geometry("340x480")
 
@@ -574,62 +719,73 @@ def _get_aoi_rectangles(config, part_label):
 
 def clean_and_prepare_data(df, invalid_gaze_threshold, consecutive_zero_threshold=5, report_dir='reports'):
     """
-    Cleans the raw data by handling zero/invalid values and calculates total 
-    reading time per question for each participant.
+    Cleans the raw data by handling zero/invalid values and calculates total
+    reading time per question for each participant. (Ultra memory-safe version)
     """
+    for col in ['BPOGX','BPOGY','FPOGS']:
+        if col in df.columns:
+            df[col] = df[col].astype('float32')
+    if 'BPOGV' in df.columns:
+        df['BPOGV'] = df['BPOGV'].astype('int8')
+
     # Use correct column names for gaze data
     gaze_x_col, gaze_y_col, timestamp_col = 'BPOGX', 'BPOGY', 'FPOGS'
-    
-    # Step 1: conservative sample-level validity using AND (avoid discarding noisy but usable samples)
+
+    # Step 1: conservative sample-level validity using AND
     df['raw_validity_flag'] = df.get('BPOGV', 1) == 1
 
     # mark zero coordinates
     df['is_zero_coord'] = (df[gaze_x_col] == 0) & (df[gaze_y_col] == 0)
 
-    # Detect consecutive zero runs per participant-question
+    # Detect consecutive zero runs per participant-question (ultra memory-safe version)
     df = df.sort_values(by=['participant_id', 'question_id', timestamp_col])
-    def _zero_run_len(x):
-        # returns run length at each position (consecutive zeros)
-        runs = (x != x.shift()).cumsum()
-        sizes = x.groupby(runs).transform('size')
-        return sizes
+    df['block'] = (df['is_zero_coord'].ne(df['is_zero_coord'].shift()) |
+                   df['question_id'].ne(df['question_id'].shift()) |
+                   df['participant_id'].ne(df['participant_id'].shift())).cumsum()
+    block_sizes = df.groupby('block')['block'].count()
+    df['block_size'] = df['block'].map(block_sizes)
+    df['zero_run_len'] = df['block_size'].where(df['is_zero_coord'], 0)
+    df.drop(columns=['block', 'block_size'], inplace=True)
 
-    # only compute on grouped is_zero_coord
-    df['zero_run_len'] = df.groupby(['participant_id', 'question_id'])['is_zero_coord'].transform(_zero_run_len)
-
-    # Consider a sample invalid only if validity flag false OR zero_run_len >= consecutive_zero_threshold
+    # Consider a sample invalid only if validity flag false OR zero_run_len >= threshold
     df['raw_valid_gaze_sample'] = (df['raw_validity_flag']) & (~((df['is_zero_coord']) & (df['zero_run_len'] >= int(consecutive_zero_threshold))))
 
-    # Calculate the number of invalid gaze samples per participant-question (for diagnostics)
+    # Calculate diagnostics
     invalid_samples_count = df.groupby(['participant_id', 'question_id']).apply(
         lambda x: (~x['raw_valid_gaze_sample']).sum(), include_groups=False
     ).reset_index(name='invalid_gaze_count')
-
     total_samples_count = df.groupby(['participant_id', 'question_id']).size().reset_index(name='total_gaze_count')
-
     gaze_validity_stats = pd.merge(invalid_samples_count, total_samples_count, on=['participant_id', 'question_id'])
     gaze_validity_stats['invalid_gaze_ratio'] = gaze_validity_stats['invalid_gaze_count'] / gaze_validity_stats['total_gaze_count']
 
-    # Ensure reports directory exists
-    os.makedirs(report_dir, exist_ok=True)
-    gaze_validity_csv = os.path.join(report_dir, 'gaze_validity_summary.csv')
-    gaze_validity_stats.to_csv(gaze_validity_csv, index=False, float_format='%.4f')
-    print(f"Saved gaze validity per trial summary to {gaze_validity_csv}")
-
-    # Participant-level summary
     participant_summary = gaze_validity_stats.groupby('participant_id').agg(
         total_rows=('total_gaze_count', 'sum'),
         removed_rows=('invalid_gaze_count', 'sum')
     ).reset_index()
     participant_summary['valid_ratio'] = 1.0 - (participant_summary['removed_rows'] / participant_summary['total_rows']).replace({np.inf: 0, np.nan: 0})
-    participant_csv = os.path.join(report_dir, 'participant_validity_summary.csv')
-    participant_summary.to_csv(participant_csv, index=False, float_format='%.4f')
-    print(f"Saved participant validity summary to {participant_csv}")
 
-    # Identify participant-question pairs exceeding threshold but don't drop yet; return list for caller
     questions_to_remove = gaze_validity_stats[gaze_validity_stats['invalid_gaze_ratio'] > float(invalid_gaze_threshold)][['participant_id', 'question_id']]
 
-    # Filter out high-invalid trials from further gaze-based onset/phase computations, but keep original for diagnostics
+    # Create a detailed removed-samples table
+    removed_trials_df = pd.DataFrame()
+    if not questions_to_remove.empty:
+        keys_to_remove_idx = pd.MultiIndex.from_frame(questions_to_remove)
+        df_idx = pd.MultiIndex.from_frame(df[['participant_id', 'question_id']])
+        trial_mask = df_idx.isin(keys_to_remove_idx)
+        removed_trials_df = df[trial_mask].copy()
+        removed_trials_df['remove_reason'] = 'trial_high_invalid_ratio'
+
+    removed_samples_df = df[~df['raw_valid_gaze_sample']].copy()
+    if not removed_samples_df.empty:
+        removed_samples_df['remove_reason'] = 'invalid_sample'
+
+    removed_combined = pd.concat([removed_trials_df, removed_samples_df], ignore_index=True) if not removed_trials_df.empty or not removed_samples_df.empty else pd.DataFrame()
+
+    removed_summary = pd.DataFrame(columns=['participant_id', 'question_id', 'remove_reason'])
+    if not removed_combined.empty:
+        removed_summary = removed_combined.groupby(['participant_id', 'question_id'])['remove_reason'].apply(lambda x: ';'.join(sorted(set(x)))).reset_index()
+
+    # Filter data for timing calculations
     if not questions_to_remove.empty:
         keys_to_remove_idx = pd.MultiIndex.from_frame(questions_to_remove)
         df_idx = pd.MultiIndex.from_frame(df[['participant_id', 'question_id']])
@@ -638,30 +794,233 @@ def clean_and_prepare_data(df, invalid_gaze_threshold, consecutive_zero_threshol
     else:
         df_filtered = df.copy()
 
-    # Now keep only rows flagged as valid samples for timing calculations
     df_valid_samples = df_filtered[df_filtered['raw_valid_gaze_sample']].copy()
     df_valid_samples[timestamp_col] = pd.to_numeric(df_valid_samples[timestamp_col], errors='coerce')
     df_valid_samples.dropna(subset=[timestamp_col], inplace=True)
     df_valid_samples.sort_values(by=['participant_id', 'question_id', timestamp_col], inplace=True)
 
-    # Calculate total time (t_ij) per question for each participant, preserving part info
-    time_df = df_valid_samples.groupby(['participant_id', 'question_id', 'part'])[timestamp_col].agg(['min', 'max']).reset_index()
-    time_df['t_ij'] = (time_df['max'] - time_df['min']) # Timestamp is already in seconds
-    
-    # valid_data flag + threshold (keep your logic)
-    time_df['valid_data'] = time_df['t_ij'] > 0
+    group_cols = ['participant_id', 'question_id']
+    if 'part' in df_valid_samples.columns:
+        group_cols.append('part')
 
-    # Filter out questions with very short interaction time
-    time_df = time_df[time_df['t_ij'] > 1.0] # Minimum 1 second interaction
-    if time_df['t_ij'].max() > 300:
-      print("⚠️ Warning: Some t_ij values exceed 300s — check timestamp units (FPOGS should be seconds).")
+    time_df = df_valid_samples.groupby(group_cols)[timestamp_col].agg(['min', 'max']).reset_index()
 
-    # Save overall valid pair counts for logging
-    total_pairs = time_df.shape[0]
-    print(f"Total valid participant-question pairs after cleaning: {total_pairs}")
+    time_df['t_ij'] = (time_df['max'] - time_df['min'])
+    time_df['valid_data'] = time_df['t_ij'] > 1.0
+    time_df = time_df[time_df['valid_data']]
 
-    # Return time_df and diagnostics for further reporting
-    return time_df, gaze_validity_stats, participant_summary
+    return time_df, gaze_validity_stats, participant_summary, removed_summary
+
+
+def stream_clean_all(
+    output_dir,
+    participant_ids,
+    question_ids,
+    invalid_gaze_threshold,
+    consecutive_zero_threshold,
+    reports_dir,
+    intermediate_output_dir,
+    progress_queue=None,
+    cancel_event=None,
+    part_data=None
+):
+    """
+    Streamed data cleaning pipeline.
+    Reads each participant's CSVs in small chunks to save memory,
+    cleans them using clean_and_prepare_data, and appends results to CSV outputs.
+    """
+
+    import gc
+    import traceback
+
+    # Paths for intermediate results
+    time_output_path = os.path.join(intermediate_output_dir, "time_df.csv")
+    gaze_output_path = os.path.join(intermediate_output_dir, "gaze_validity_stats.csv")
+    part_output_path = os.path.join(intermediate_output_dir, "participant_summary.csv")
+    removed_output_path = os.path.join(intermediate_output_dir, "removed_summary.csv")
+
+    # Remove old intermediate files
+    for p in [time_output_path, gaze_output_path, part_output_path, removed_output_path]:
+        if os.path.exists(p):
+            os.remove(p)
+
+    # Iterate participants
+    for i, pid in enumerate(participant_ids, start=1):
+        if cancel_event and cancel_event.is_set():
+            break
+
+        try:
+            part_dir = os.path.join(output_dir, pid)
+            if not os.path.exists(part_dir):
+                continue
+
+            # All question CSVs for this participant
+            files = [
+                os.path.join(part_dir, f)
+                for f in os.listdir(part_dir)
+                if f.startswith("Q") and f.endswith(".csv")
+            ]
+            if question_ids is not None:
+                files = [
+                    f for f in files
+                    if os.path.basename(f).replace(".csv", "") in question_ids
+                ]
+            if not files:
+                continue
+
+            _log_memory_usage(progress_queue, f"Before reading {pid}")
+
+            # Read files in small chunks to prevent MemoryError
+            df_list = []
+            for f in files:
+                try:
+                    for chunk in pd.read_csv(
+                        f,
+                        low_memory=False,
+                        on_bad_lines="warn",
+                        chunksize=100000,  # read in chunks of 100k rows
+                        dtype={
+                            "BPOGX": "float32",
+                            "BPOGY": "float32",
+                            "FPOGS": "float32",
+                            "BPOGV": "int8",
+                        },
+                    ):
+                        chunk["participant_id"] = pid
+                        chunk["question_id"] = os.path.basename(f).replace(".csv", "")
+                        df_list.append(chunk)
+                except Exception as e:
+                    msg = f"Error reading {f}: {e}"
+                    print(msg)
+                    if progress_queue:
+                        progress_queue.put(("log", msg))
+
+            if not df_list:
+                continue
+
+            participant_df = pd.concat(df_list, ignore_index=True)
+            del df_list
+            gc.collect()
+
+            # Inject 'part' column if provided
+            if part_data is not None:
+                try:
+                    participant_df = participant_df.merge(
+                        part_data[["participant_id", "question_id", "part"]],
+                        on=["participant_id", "question_id"],
+                        how="left",
+                    )
+                except Exception as _e:
+                    if progress_queue:
+                        progress_queue.put(
+                            ("log", f"Warning: could not merge part_data for {pid}: {_e}")
+                        )
+
+            _log_memory_usage(progress_queue, f"After reading {pid}, before cleaning")
+
+            # Clean and prepare data
+            time_df, gaze_stats, part_summary, removed_summary = clean_and_prepare_data(
+                participant_df,
+                invalid_gaze_threshold,
+                consecutive_zero_threshold,
+                reports_dir,
+            )
+
+            _log_memory_usage(progress_queue, f"After cleaning {pid}")
+
+            # Append results to CSV outputs
+            time_df.to_csv(
+                time_output_path,
+                mode="a",
+                header=not os.path.exists(time_output_path),
+                index=False,
+            )
+            gaze_stats.to_csv(
+                gaze_output_path,
+                mode="a",
+                header=not os.path.exists(gaze_output_path),
+                index=False,
+            )
+            part_summary.to_csv(
+                part_output_path,
+                mode="a",
+                header=not os.path.exists(part_output_path),
+                index=False,
+            )
+            removed_summary.to_csv(
+                removed_output_path,
+                mode="a",
+                header=not os.path.exists(removed_output_path),
+                index=False,
+            )
+
+            del participant_df, time_df, gaze_stats, part_summary, removed_summary
+            gc.collect()
+
+        except MemoryError:
+            tb_str = traceback.format_exc()
+            error_msg = f"FATAL: MemoryError on participant {pid}. Skipping. See traceback file."
+            print(error_msg)
+            if progress_queue:
+                progress_queue.put(("log", error_msg))
+            with open(
+                os.path.join(reports_dir, "memory_error_traceback.txt"),
+                "a",
+                encoding="utf-8",
+            ) as f:
+                f.write(f"\n--- MemoryError for Participant: {pid} ---\n{tb_str}\n")
+        except Exception as e:
+            tb_str = traceback.format_exc()
+            error_msg = f"ERROR: Unexpected error on participant {pid}: {e}. Skipping."
+            print(error_msg)
+            if progress_queue:
+                progress_queue.put(("log", error_msg))
+            with open(
+                os.path.join(reports_dir, "memory_error_traceback.txt"),
+                "a",
+                encoding="utf-8",
+            ) as f:
+                f.write(f"\n--- Error for Participant: {pid} ---\n{tb_str}\n")
+
+        if progress_queue:
+            percent = int(100 * i / len(participant_ids))
+            progress_queue.put(
+                (
+                    "stage_progress",
+                    (percent, f"Cleaning: Participant {pid} ({i}/{len(participant_ids)})"),
+                )
+            )
+
+    # After the loop, read back the combined results
+    try:
+        combined_time_df = (
+            pd.read_csv(time_output_path) if os.path.exists(time_output_path) else pd.DataFrame()
+        )
+        combined_gaze_validity_stats = (
+            pd.read_csv(gaze_output_path)
+            if os.path.exists(gaze_output_path)
+            else pd.DataFrame()
+        )
+        combined_participant_summary = (
+            pd.read_csv(part_output_path)
+            if os.path.exists(part_output_path)
+            else pd.DataFrame()
+        )
+        combined_removed_summary = (
+            pd.read_csv(removed_output_path)
+            if os.path.exists(removed_output_path)
+            else pd.DataFrame()
+        )
+    except Exception as e:
+        print(f"Could not read back intermediate results: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    return (
+        combined_time_df,
+        combined_gaze_validity_stats,
+        combined_participant_summary,
+        combined_removed_summary,
+    )
 
 # ======================================================================================
 # >>> ADDED: TIME CAP SUPPORT (NO-TIMELIMIT/TIMELIMIT)
@@ -774,6 +1133,82 @@ def apply_behavioral_labels(df, answer_data, time_cap_s=None, exclude_censored=F
 # ======================================================================================
 # STAGE 4: FEATURE ENGINEERING (AOI ANALYSIS)
 # ======================================================================================
+# === BEGIN: helpers for AOI & phases (memory-safe) ===
+def assign_aoi_code_fast(x_np, y_np):
+    """
+    Lightweight AOI coder that maps normalized gaze x/y coordinates to small integer codes.
+    This is a simple, vectorized implementation intended to be fast and memory-frugal.
+    Returns an int16 numpy array of same length as inputs.
+    """
+    out = np.zeros_like(x_np, dtype=np.int16)
+
+    # Example AOI layout (these thresholds are intentionally simple and safe).
+    # You can replace these with precise rectangle checks using overlay configs if available.
+    # Map codes:
+    # 0 = Other, 1 = Choice_B, 2 = Choice_D, 3 = Choice_A, 4 = Question, 5 = Choice_C, 6 = Timer, 7 = Submit
+    # Question area (top-left region example)
+    m_question = (y_np <= 0.25)
+    out[m_question] = 4
+
+    # Timer (top-right)
+    m_timer = (x_np >= 0.85) & (y_np <= 0.15)
+    out[m_timer] = 6
+
+    # Submit (bottom-right)
+    m_submit = (x_np >= 0.80) & (y_np >= 0.85)
+    out[m_submit] = 7
+
+    # Choices - simple 2x2 grid in center area
+    m_choice_a = (x_np < 0.5) & (y_np >= 0.40) & (y_np < 0.60)
+    m_choice_b = (x_np >= 0.5) & (y_np >= 0.40) & (y_np < 0.60)
+    m_choice_c = (x_np < 0.5) & (y_np >= 0.60) & (y_np < 0.80)
+    m_choice_d = (x_np >= 0.5) & (y_np >= 0.60) & (y_np < 0.80)
+
+    out[m_choice_a] = 3
+    out[m_choice_b] = 1
+    out[m_choice_c] = 5
+    out[m_choice_d] = 2
+
+    return out
+
+
+def phases_from_codes_sorted(ts_np, codes_np):
+    """
+    Convert sorted timestamps + AOI codes into phase rows: contiguous runs of the same code.
+    Returns a DataFrame with columns: phase_idx, aoi_code, start_ts, end_ts, len_samples
+    """
+    if codes_np.size == 0:
+        return pd.DataFrame(columns=['phase_idx', 'aoi_code', 'start_ts', 'end_ts', 'len_samples'])
+
+    # previous values array
+    prev = np.empty_like(codes_np)
+    prev[0] = -9999
+    if codes_np.size > 1:
+        prev[1:] = codes_np[:-1]
+
+    boundaries = np.flatnonzero(codes_np != prev)
+    if boundaries.size == 0:
+        return pd.DataFrame({
+            'phase_idx': [0],
+            'aoi_code': [int(codes_np[0])],
+            'start_ts': [float(ts_np[0])],
+            'end_ts': [float(ts_np[-1])],
+            'len_samples': [int(codes_np.size)]
+        })
+
+    starts = boundaries
+    ends = np.append(boundaries[1:], codes_np.size) - 1
+    lengths = (ends - starts + 1).astype(np.int32)
+
+    return pd.DataFrame({
+        'phase_idx': np.arange(starts.size, dtype=np.int32),
+        'aoi_code': codes_np[starts].astype(np.int16),
+        'start_ts': ts_np[starts].astype(float),
+        'end_ts': ts_np[ends].astype(float),
+        'len_samples': lengths
+    })
+
+# === END: helpers for AOI & phases (memory-safe) ===
 
 def engineer_features(raw_df, processed_df):
     """
@@ -861,24 +1296,86 @@ def engineer_features(raw_df, processed_df):
     # duration between samples
     raw_df['duration'] = raw_df.groupby(['participant_id', 'question_id'])[timestamp_col].diff().fillna(0)
 
-    # Aggregate time spent in each phase
-    phase_durations = raw_df.groupby(['participant_id', 'question_id', 'phase'])['duration'].sum().unstack(fill_value=0).reset_index()
-    phase_durations.columns.name = None
-    
-    # Rename columns for clarity
-    if 'Reading' in phase_durations.columns:
-        phase_durations.rename(columns={'Reading': 'Reading_duration_s'}, inplace=True)
-    if 'Answering' in phase_durations.columns:
-        phase_durations.rename(columns={'Answering': 'Answering_duration_s'}, inplace=True)
-    
-    # aggregate AOI times too
-    aoi_time = raw_df.groupby(['participant_id','question_id','AOI'])['duration'].sum().unstack(fill_value=0).reset_index()
+    # Aggregate time spent in each phase (use float32 to reduce memory)
+    reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reports')
+    os.makedirs(reports_dir, exist_ok=True)
+
+    phase_durations = None
+    try:
+        phase_durations = raw_df.groupby(['participant_id', 'question_id', 'phase'])['duration'].sum().unstack(fill_value=0)
+        try:
+            phase_durations = phase_durations.astype('float32')
+        except Exception:
+            pass
+        phase_durations = phase_durations.reset_index()
+        phase_durations.columns.name = None
+        # Rename columns for clarity
+        if 'Reading' in phase_durations.columns:
+            phase_durations.rename(columns={'Reading': 'Reading_duration_s'}, inplace=True)
+        if 'Answering' in phase_durations.columns:
+            phase_durations.rename(columns={'Answering': 'Answering_duration_s'}, inplace=True)
+        phase_fallback = False
+    except MemoryError:
+        # Fallback: compute long-form aggregates and then merge Reading/Answering without creating a huge wide matrix
+        import traceback as _tb
+        tb = _tb.format_exc()
+        with open(os.path.join(reports_dir, 'memory_error_traceback.txt'), 'a', encoding='utf-8') as _f:
+            _f.write('\n--- MemoryError during phase_durations unstack ---\n')
+            _f.write(tb)
+        pd_phase = raw_df.groupby(['participant_id', 'question_id', 'phase'])['duration'].sum().reset_index()
+        pd_read = pd_phase[pd_phase['phase'] == 'Reading'][['participant_id', 'question_id', 'duration']].rename(columns={'duration': 'Reading_duration_s'})
+        pd_ans = pd_phase[pd_phase['phase'] == 'Answering'][['participant_id', 'question_id', 'duration']].rename(columns={'duration': 'Answering_duration_s'})
+        phase_durations = pd.merge(pd_read, pd_ans, on=['participant_id', 'question_id'], how='outer').fillna(0.0)
+        try:
+            phase_durations['Reading_duration_s'] = phase_durations['Reading_duration_s'].astype('float32')
+            phase_durations['Answering_duration_s'] = phase_durations['Answering_duration_s'].astype('float32')
+        except Exception:
+            pass
+        phase_fallback = True
+
+    # aggregate AOI times too (downcast to float32). Use a safe fallback limiting to top-N AOIs if required.
+    aoi_time = None
+    try:
+        aoi_time = raw_df.groupby(['participant_id', 'question_id', 'AOI'])['duration'].sum().unstack(fill_value=0)
+        try:
+            aoi_time = aoi_time.astype('float32')
+        except Exception:
+            pass
+        aoi_time = aoi_time.reset_index()
+        aoi_fallback = False
+    except MemoryError:
+        import traceback as _tb
+        tb = _tb.format_exc()
+        with open(os.path.join(reports_dir, 'memory_error_traceback.txt'), 'a', encoding='utf-8') as _f:
+            _f.write('\n--- MemoryError during AOI unstack ---\n')
+            _f.write(tb)
+        # Save long form for inspection and build a limited pivot for the top AOIs only
+        aoi_long = raw_df.groupby(['participant_id', 'question_id', 'AOI'])['duration'].sum().reset_index()
+        aoi_long.to_csv(os.path.join(reports_dir, 'aoi_time_long.csv'), index=False)
+        # select top AOIs globally to keep columns manageable
+        try:
+            top_aois = aoi_long.groupby('AOI')['duration'].sum().nlargest(10).index.tolist()
+            aoi_pivot = aoi_long[aoi_long['AOI'].isin(top_aois)].pivot_table(index=['participant_id', 'question_id'], columns='AOI', values='duration', aggfunc='sum', fill_value=0).reset_index()
+            try:
+                aoi_pivot = aoi_pivot.astype('float32')
+            except Exception:
+                pass
+            aoi_time = aoi_pivot
+            aoi_fallback = True
+        except Exception:
+            # If even the limited pivot fails, keep the long form as a CSV and skip merging wide AOI columns
+            aoi_time = None
+            aoi_fallback = True
 
     # Merge features into the main processed dataframe
     final_df = pd.merge(processed_df, phase_durations, on=['participant_id', 'question_id'], how='left')
     final_df = pd.merge(final_df, onsets, on=['participant_id', 'question_id'], how='left')  # keep onsets for inspection
-    final_df = pd.merge(final_df, aoi_time, on=['participant_id','question_id'], how='left')
-    
+    if aoi_time is not None:
+        final_df = pd.merge(final_df, aoi_time, on=['participant_id', 'question_id'], how='left')
+    else:
+        # AOI wide columns not available (fallback saved long-form CSV). Proceed without wide AOI columns.
+        pass
+
     return final_df
 
 
@@ -887,7 +1384,6 @@ def engineer_features(raw_df, processed_df):
 # ======================================================================================
 
 def visualize_stage1(df, ax):
-    """Visualizes the distribution of time spent on questions, separated by exam part."""
     sns.boxplot(data=df, x='part', y='t_ij', ax=ax)
     ax.set_title('Stage 1: Distribution of Time per Question (t_ij)')
     ax.set_xlabel('Exam Part')
@@ -896,18 +1392,12 @@ def visualize_stage1(df, ax):
 
 
 def visualize_stage2(df, ax):
-    """Visualizes outlier detection results, separated by exam part."""
-    # To avoid a cluttered plot, let's visualize a sample of questions
     sample_questions = sorted(df['question_id'].unique())[:5]
     sample_df = df[df['question_id'].isin(sample_questions)]
-    
     sns.scatterplot(data=sample_df, x='question_id', y='t_ij', hue='is_valid_time', style='part', s=100, ax=ax)
-    
-    # Plot the lower bound line for reference
     if not sample_df.empty:
         lb_lines = sample_df[['question_id', 'part', 'LB']].drop_duplicates()
         sns.stripplot(data=lb_lines, x='question_id', y='LB', color='red', marker='_', ax=ax, size=15, jitter=False)
-
     ax.set_title('Stage 2: Outlier Detection (Invalidly Fast Answers)')
     ax.set_ylabel('Time (seconds)')
     ax.set_xlabel('Question ID')
@@ -916,7 +1406,6 @@ def visualize_stage2(df, ax):
 
 
 def visualize_stage3(df, ax):
-    """Visualizes the distribution of behavioral labels, separated by exam part."""
     sns.countplot(data=df, x='label', hue='part', order=['NP', 'UP', 'INVALID', 'NA_no_correct'], ax=ax)
     ax.set_title('Stage 3: Distribution of Behavioral Labels')
     ax.set_xlabel('Label')
@@ -925,20 +1414,15 @@ def visualize_stage3(df, ax):
 
 
 def visualize_stage4(df, ax):
-    """Visualizes the reading vs. answering phase durations, separated by exam part."""
-    # Prepare data for boxplot, ensuring columns exist
     plot_cols = []
     if 'Reading_duration_s' in df.columns:
         plot_cols.append('Reading_duration_s')
     if 'Answering_duration_s' in df.columns:
         plot_cols.append('Answering_duration_s')
-    
     if not plot_cols:
-        print("Warning: Duration columns for visualization not found.")
         ax.text(0.5, 0.5, 'No data for Stage 4 plot', ha='center', va='center')
         ax.set_title('Stage 4: Reading vs. Answering Phase Durations')
         return
-
     plot_data = df[plot_cols + ['part']].melt(id_vars=['part'], var_name='Phase', value_name='Duration (s)')
     sns.boxplot(data=plot_data, x='Phase', y='Duration (s)', hue='part', ax=ax)
     ax.set_title('Stage 4: Reading vs. Answering Phase Durations')
@@ -1058,7 +1542,7 @@ def visualize_heatmaps(df, viz_dir, question_texts, bg_image_part1=None, bg_imag
                 else:
                     print(f"Warning: Not enough filtered gaze data for participant {participant_id}, question {q_id}. Only background and boxes will be shown.")
                 
-                ax.set_title(f'Gaze Heatmap for {participant_id} | {part} | {q_id}')
+                ax.set_title(f'Gaze Heatmap for {display_participant(participant_id)} | {part} | {display_question(q_id)}')
                 ax.set_xlabel('Gaze X Coordinate')
                 ax.set_ylabel('Gaze Y Coordinate')
                 ax.set_xlim(0, 1)
@@ -1178,7 +1662,7 @@ def visualize_scatterplots(df, viz_dir, question_texts, bg_image_part1=None, bg_
 
                 # Scatter the gaze points
                 ax.scatter(filtered_gaze['BPOGX'], filtered_gaze['BPOGY'], s=30, c='red', alpha=0.6, zorder=4)
-                ax.set_title(f'Gaze Scatter for {participant_id} | {part} | {q_id}')
+                ax.set_title(f'Gaze Scatter for {display_participant(participant_id)} | {part} | {display_question(q_id)}')
                 ax.set_xlabel('Gaze X Coordinate')
                 ax.set_ylabel('Gaze Y Coordinate')
                 ax.set_xlim(0, 1)
@@ -1256,16 +1740,13 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         for _, prow in per_trial.iterrows():
             pid = prow['participant_id']
             qid = prow['question_id']
-            
             correct_letter = participant_map.get(pid, {}).get(qid)
 
             row = {'participant_id': pid, 'question_id': qid}
             row['Question'] = prow.get('Question', 0.0)
-            
             if correct_letter:
                 correct_col = f'Choice_{correct_letter}'
                 row['Correct_Answer'] = prow.get(correct_col, 0.0)
-                
                 other_sum = 0.0
                 for letter in ['A', 'B', 'C', 'D']:
                     if letter != correct_letter:
@@ -1280,7 +1761,6 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
                     choice_col = f'Choice_{letter}'
                     other_sum += prow.get(choice_col, 0.0)
                 row['Other_Answers'] = other_sum
-            
             per_trial_rows.append(row)
 
         if not per_trial_rows:
@@ -1289,29 +1769,26 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
 
         per_trial_df = pd.DataFrame(per_trial_rows)
 
-        # Now average across participants for each question
+        # Average across participants for each question
         avg_times = per_trial_df.groupby('question_id')[['Question', 'Correct_Answer', 'Other_Answers']].mean().reset_index()
 
         if cancel_event and cancel_event.is_set(): return
         progress_queue.put(("stage_progress", (50, "Creating AOI summary visualization...")))
 
-        # Prepare pivot table for seconds
+        # Seconds + percents tables
         avg_times = avg_times.set_index('question_id')
         for c in ['Question', 'Correct_Answer', 'Other_Answers']:
             if c not in avg_times.columns:
                 avg_times[c] = 0.0
 
         pivot_df = avg_times[['Question', 'Correct_Answer', 'Other_Answers']].copy()
-
-        # compute percent breakdown per question (row-wise)
         row_sums = pivot_df.sum(axis=1)
         percent_df = pivot_df.div(row_sums.replace({0: np.nan}), axis=0).fillna(0.0) * 100
 
-        # Reorder rows by question id for plotting
         pivot_df.sort_index(inplace=True)
         percent_df = percent_df.loc[pivot_df.index]
 
-        # Build human-readable multi-line x tick labels
+        # Multi-line xlabels with seconds+percent
         try:
             summary_labels = []
             for q in pivot_df.index:
@@ -1329,19 +1806,15 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         except Exception:
             summary_labels = list(pivot_df.index.astype(str))
 
-        # Colors
         colors = {'Question': 'skyblue', 'Correct_Answer': 'mediumseagreen', 'Other_Answers': 'lightcoral'}
-
-        # Create a two-panel stacked bar: top = seconds, bottom = percent
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(18, 14), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
 
-        # Plot seconds (stacked)
         pivot_df.plot(kind='bar', stacked=True, ax=ax1, color=[colors.get(c) for c in pivot_df.columns])
         ax1.set_title('Average Time Spent on AOIs per Question (Stacked seconds)')
         ax1.set_ylabel('Average Time (seconds)')
         ax1.legend(title='Area of Interest', bbox_to_anchor=(1.02, 1), loc='upper left')
 
-        # Annotate seconds values
+        # annotate seconds
         try:
             positions = np.arange(len(pivot_df))
             bottoms = np.zeros(len(pivot_df))
@@ -1354,14 +1827,12 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         except Exception:
             pass
 
-        # percent plot
         percent_df.plot(kind='bar', stacked=True, ax=ax2, color=[colors.get(c) for c in percent_df.columns])
         ax2.set_title('Relative Attention Distribution per Question (Percent)')
         ax2.set_ylabel('Percent (%)')
         ax2.set_xlabel('Question ID')
         ax2.legend(title='Area of Interest', bbox_to_anchor=(1.02, 1), loc='upper left')
 
-        # Apply multi-line labels
         try:
             ax2.set_xticklabels(summary_labels, rotation=0, ha='center', fontsize=8)
         except Exception:
@@ -1370,7 +1841,7 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         plt.subplots_adjust(bottom=0.30)
         plt.tight_layout()
 
-        # Annotate percent values
+        # annotate percents
         try:
             positions = np.arange(len(percent_df))
             bottoms_p = np.zeros(len(percent_df))
@@ -1383,11 +1854,11 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         except Exception:
             pass
 
-        # Save plot and CSV
         output_path = os.path.join(viz_dir, 'aoi_summary_per_question.png')
         plt.savefig(output_path)
         print(f"Saved AOI summary per question (seconds + percent) to {output_path}")
-        
+
+        # CSV کنار تصویر
         try:
             summary_df = pivot_df.copy()
             summary_df['Question_pct'] = percent_df['Question']
@@ -1413,14 +1884,13 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
 
 
 def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue, cancel_event=None):
-    """Generates bar charts for average time spent in each AOI per question."""
     print("Generating AOI time per question bar charts...")
     if 'aoi_cols' not in df.columns and not any(col.startswith('Choice_') for col in df.columns):
         print("Warning: No AOI columns found for 'AOI Time per Question' visualization.")
         return
     if cancel_event and cancel_event.is_set(): return
 
-    aoi_cols = [col for col in df.columns if col.startswith('Choice_') or col in ['Question', 'Timer', 'Submit']]
+    aoi_cols = [c for c in df.columns if c.startswith('Choice_') or c in ['Question', 'Timer', 'Submit']]
     if not aoi_cols:
         print("Warning: No AOI columns found for 'AOI Time per Question' visualization.")
         return
@@ -1428,13 +1898,12 @@ def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue,
     try:
         progress_queue.put(("stage_progress", (20, "Calculating average AOI time per question...")))
         if cancel_event and cancel_event.is_set(): return
-        # Calculate average time per AOI for each question
         aoi_avg_time_q = df.groupby('question_id')[aoi_cols].mean().reset_index()
         aoi_avg_time_q_melted = aoi_avg_time_q.melt(id_vars='question_id', var_name='AOI', value_name='Average Duration (s)')
 
         progress_queue.put(("stage_progress", (50, "Creating visualization...")))
         if cancel_event and cancel_event.is_set(): return
-        
+
         plt.figure(figsize=(15, 8))
         sns.barplot(data=aoi_avg_time_q_melted, x='question_id', y='Average Duration (s)', hue='AOI', palette='viridis')
         plt.title('Average Time Spent in Each AOI per Question')
@@ -1443,7 +1912,7 @@ def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue,
         plt.xticks(rotation=45, ha='right')
         plt.legend(title='AOI', bbox_to_anchor=(1.05, 1), loc='upper left')
         plt.tight_layout()
-        
+
         aoi_q_path = os.path.join(viz_dir, 'aoi_time_per_question.png')
         plt.savefig(aoi_q_path)
         print(f"Saved AOI time per question bar chart to {aoi_q_path}")
@@ -1453,19 +1922,17 @@ def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue,
         print("--- AOI time per question chart generation finished ---")
 
 def visualize_aoi_time_per_label(df, viz_dir, progress_queue, cancel_event=None):
-    """Generates bar charts for average time spent in each AOI per behavioral label (UP/NP)."""
     print("Generating AOI time per label bar charts...")
     if 'aoi_cols' not in df.columns and not any(col.startswith('Choice_') for col in df.columns):
         print("Warning: No AOI columns found for 'AOI Time per Label' visualization.")
         return
     if cancel_event and cancel_event.is_set(): return
 
-    aoi_cols = [col for col in df.columns if col.startswith('Choice_') or col in ['Question', 'Timer', 'Submit']]
+    aoi_cols = [c for c in df.columns if c.startswith('Choice_') or c in ['Question', 'Timer', 'Submit']]
     if not aoi_cols:
         print("Warning: No AOI columns found for 'AOI Time per Label' visualization.")
         return
 
-    # Filter out 'INVALID' and 'NA_no_correct' labels for this analysis if they exist
     filtered_df = df[df['label'].isin(['UP', 'NP'])].copy()
     if filtered_df.empty:
         print("Warning: No valid UP/NP labels found for 'AOI Time per Label' visualization.")
@@ -1474,7 +1941,6 @@ def visualize_aoi_time_per_label(df, viz_dir, progress_queue, cancel_event=None)
     try:
         progress_queue.put(("stage_progress", (20, "Calculating average AOI time per label...")))
         if cancel_event and cancel_event.is_set(): return
-        # Calculate average time per AOI for each label
         aoi_avg_time_l = filtered_df.groupby('label')[aoi_cols].mean().reset_index()
         aoi_avg_time_l_melted = aoi_avg_time_l.melt(id_vars='label', var_name='AOI', value_name='Average Duration (s)')
 
@@ -1496,6 +1962,450 @@ def visualize_aoi_time_per_label(df, viz_dir, progress_queue, cancel_event=None)
         plt.close()
 
 # ======================================================================================
+# Per-participant cumulative charts generator
+# ======================================================================================
+def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_event=None, correct_answers=None):
+    """Generates per-participant cumulative bar charts (seconds & percent) and label distribution.
+    Saves images under: <viz_dir>/participant_bars/<participant>/
+    """
+    try:
+        print("Generating per-participant cumulative charts...")
+        participant_bars_dir = os.path.join(viz_dir, 'participant_bars')
+        os.makedirs(participant_bars_dir, exist_ok=True)
+
+        if 'participant_id' not in df.columns or 'question_id' not in df.columns or 't_ij' not in df.columns:
+            print("Warning: Missing required columns for participant cumulative visualizations.")
+            return
+
+        unique_p = sorted(df['participant_id'].dropna().unique().tolist())
+        total = max(1, len(unique_p))
+
+        for i, pid in enumerate(unique_p, start=1):
+            if cancel_event and cancel_event.is_set():
+                return
+
+            p_dir = os.path.join(participant_bars_dir, str(pid))
+            os.makedirs(p_dir, exist_ok=True)
+
+            p_df = df[df['participant_id'] == pid].copy()
+            # Aggregate per question (there should typically be one row per question)
+            # Build per-question AOI breakdown if AOI columns exist
+            choice_cols = [c for c in p_df.columns if c.startswith('Choice_')]
+            has_question_aoi = 'Question' in p_df.columns
+
+            # Sum per question
+            agg = p_df.groupby('question_id', sort=False)['t_ij'].sum().reset_index()
+            if has_question_aoi or choice_cols:
+                # Prepare breakdown dataframe
+                per_q = p_df.groupby('question_id', sort=False).agg({**({'Question':'sum'} if has_question_aoi else {}), **({c:'sum' for c in choice_cols} if choice_cols else {})}).reset_index()
+            else:
+                per_q = None
+            # Sort question ids numerically if possible
+            try:
+                agg['q_sort'] = agg['question_id'].apply(lambda x: _extract_numeric_suffix(x))
+                agg.sort_values('q_sort', inplace=True)
+            except Exception:
+                agg.sort_values('question_id', inplace=True)
+
+            secs = agg['t_ij'].fillna(0).astype(float)
+            questions = agg['question_id'].astype(str).tolist()
+            q_labels = [display_question(q) for q in questions]
+            total_secs = secs.sum()
+            pct = (secs / total_secs * 100) if total_secs > 0 else secs * 0
+
+            # Cumulative time (seconds) bar chart
+            try:
+                fig, ax = plt.subplots(figsize=(12, 6))
+                # Use clear color map and a consistent color for bars
+                bars = sns.barplot(x=q_labels, y=secs.values, color='tab:blue', ax=ax)
+                ax.set_xticklabels(q_labels, rotation=45, ha='right')
+                ax.set_title(f'Participant {pid} — Time per Question (s)')
+                ax.set_ylabel('Seconds')
+                ax.set_xlabel('Question')
+                # Annotate bars with integer seconds; move small labels above bar
+                max_sec = total_secs if total_secs > 0 else secs.max() if len(secs) > 0 else 1.0
+                for bar, val in zip(bars.patches, secs.values):
+                    try:
+                        h = bar.get_height()
+                        if np.isnan(val):
+                            continue
+                        txt = f"{int(round(val))}s"
+                        # If bar is very small relative to max, place label above
+                        if max_sec > 0 and h < max_sec * 0.03:
+                            ax.text(bar.get_x() + bar.get_width()/2, h + max(0.5, 0.01 * max_sec), txt, ha='center', va='bottom', fontsize=9)
+                        else:
+                            ax.text(bar.get_x() + bar.get_width()/2, h/2, txt, ha='center', va='center', fontsize=9, color='white')
+                    except Exception:
+                        pass
+                plt.tight_layout()
+                sec_path = os.path.join(p_dir, 'cumulative_time_seconds.png')
+                fig.savefig(sec_path)
+                plt.close(fig)
+            except Exception as e:
+                print(f"Could not create seconds bar chart for {pid}: {e}")
+
+            # Percent bar chart
+            try:
+                fig, ax = plt.subplots(figsize=(12, 6))
+                bars = sns.barplot(x=q_labels, y=pct.values, color='tab:green', ax=ax)
+                ax.set_xticklabels(q_labels, rotation=45, ha='right')
+                ax.set_title(f'Participant {pid} — Time per Question (%)')
+                ax.set_ylabel('Percent of Total Time (%)')
+                ax.set_xlabel('Question')
+                # Annotate percent bars with integer percents; place tiny segments' labels above
+                max_pct = pct.max() if len(pct) > 0 else 100.0
+                for bar, val in zip(bars.patches, pct.values):
+                    try:
+                        h = bar.get_height()
+                        if np.isnan(val):
+                            continue
+                        txt = f"{int(round(val))}%"
+                        if max_pct > 0 and h < max_pct * 0.03:
+                            ax.text(bar.get_x() + bar.get_width()/2, h + 1.0, txt, ha='center', va='bottom', fontsize=9)
+                        else:
+                            ax.text(bar.get_x() + bar.get_width()/2, h/2, txt, ha='center', va='center', fontsize=9, color='white')
+                    except Exception:
+                        pass
+                plt.tight_layout()
+                pct_path = os.path.join(p_dir, 'cumulative_time_percent.png')
+                fig.savefig(pct_path)
+                plt.close(fig)
+            except Exception as e:
+                print(f"Could not create percent bar chart for {pid}: {e}")
+
+            # Label distribution
+            try:
+                if 'label' in p_df.columns:
+                    lab_counts = p_df['label'].fillna('NA').value_counts()
+                    fig, ax = plt.subplots(figsize=(6, 4))
+                    bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+                    ax.set_title(f'Participant {pid} — Label Distribution')
+                    ax.set_ylabel('Count')
+                    ax.set_xlabel('Label')
+                    for bar, val in zip(bars.patches, lab_counts.values):
+                        h = bar.get_height()
+                        ax.text(bar.get_x() + bar.get_width()/2, h + 0.5, f"{int(val)}", ha='center', va='bottom', fontsize=9)
+                    plt.tight_layout()
+                    lab_path = os.path.join(p_dir, 'label_distribution.png')
+                    fig.savefig(lab_path)
+                    plt.close(fig)
+            except Exception as e:
+                print(f"Could not create label distribution for {pid}: {e}")
+
+            # Additionally: if AOI columns exist, create a stacked breakdown per question (Question / Correct_Answer / Other_Answers)
+            try:
+                if per_q is not None:
+                    # Build columns
+                    qids = per_q['question_id'].astype(str).tolist()
+                    q_labels_stack = [display_question(q) for q in qids]
+                    q_question = per_q['Question'] if 'Question' in per_q.columns else pd.Series(0, index=per_q.index)
+
+                    # Determine correct answer column for each question using multiple sources:
+                    # 1) provided correct_answers mapping (global), 2) participant-specific exam files mapping (participant_map), 3) fallback to max choice time
+                    # Build participant-specific map if available from earlier AOI summary (reuse variable name safely)
+                    participant_local_map = {}
+                    try:
+                        # Attempt to read participant-specific mapping from question_exams if available
+                        script_dir = os.path.dirname(os.path.abspath(__file__))
+                        qexam_dir = os.path.join(script_dir, 'question_exams')
+                        pnum = str(pid).split('_')[-1]
+                        qfile = os.path.join(qexam_dir, f'Participant_{pnum}.json')
+                        if os.path.exists(qfile):
+                            with open(qfile, 'r', encoding='utf-8') as jf:
+                                qdata = json.load(jf)
+                                for part_name in ('Part1', 'Part2'):
+                                    for item in qdata.get(part_name, []):
+                                        qid_local = item.get('question_id')
+                                        opts = item.get('options', [])
+                                        for idx, opt in enumerate(opts):
+                                            oid = opt.get('id', '')
+                                            if isinstance(oid, str) and oid.endswith('-C'):
+                                                letter = chr(ord('A') + idx)
+                                                participant_local_map[f'Q{qid_local}'] = letter
+                                                break
+                    except Exception:
+                        participant_local_map = {}
+
+                    correct_vals = []
+                    for q in per_q['question_id'].astype(str):
+                        c = None
+                        # 1) check provided global correct_answers mapping
+                        if correct_answers and q in correct_answers:
+                            val = correct_answers.get(q)
+                            if isinstance(val, str) and len(val) == 1 and val.isalpha():
+                                c = f"Choice_{val.upper()}"
+                        # 2) check participant-specific mapping
+                        if not c and participant_local_map and q in participant_local_map:
+                            val = participant_local_map.get(q)
+                            if isinstance(val, str) and len(val) == 1 and val.isalpha():
+                                c = f"Choice_{val.upper()}"
+                        correct_vals.append(c)
+
+                    correct_times = []
+                    other_times = []
+                    for idx, row in per_q.iterrows():
+                        # sum of choices
+                        choices_sum = 0.0
+                        for c in choice_cols:
+                            choices_sum += float(row.get(c, 0.0) or 0.0)
+                        ccol = correct_vals[idx]
+                        ctime = float(row.get(ccol, 0.0) if ccol in row.index else 0.0) if ccol else 0.0
+                        other_time = choices_sum - ctime
+                        correct_times.append(ctime)
+                        other_times.append(other_time)
+
+                    # Stacked bar chart
+                    fig, ax = plt.subplots(figsize=(14, 6))
+                    ind = np.arange(len(qids))
+                    p1 = ax.bar(ind, q_question.values, color='skyblue')
+                    p2 = ax.bar(ind, correct_times, bottom=q_question.values, color='mediumseagreen')
+                    bottoms = q_question.values + np.array(correct_times)
+                    p3 = ax.bar(ind, other_times, bottom=bottoms, color='lightcoral')
+                    ax.set_xticks(ind)
+                    ax.set_xticklabels(q_labels_stack, rotation=45, ha='right')
+                    ax.set_ylabel('Seconds')
+                    ax.set_xlabel('Question')
+                    ax.set_title(f'Participant {pid} — Per-question AOI breakdown (Question / Correct / Other)')
+                    # Annotate stacks with per-segment seconds and percent
+                    totals = np.array(q_question.values, dtype=float) + np.array(correct_times, dtype=float) + np.array(other_times, dtype=float)
+                    max_total = totals.max() if len(totals) > 0 else 1.0
+                    for i_bar in range(len(ind)):
+                        q_val = float(q_question.values[i_bar])
+                        c_val = float(correct_times[i_bar])
+                        o_val = float(other_times[i_bar])
+                        total_h = q_val + c_val + o_val
+                        # annotate segment seconds as integers; if a segment is very small, place the label above
+                        def ann(start, h, txt):
+                            if h > 0:
+                                if max_total > 0 and h < max_total * 0.03:
+                                    ax.text(i_bar, start + h + max(0.5, 0.01 * max_total), txt, ha='center', va='bottom', fontsize=8)
+                                else:
+                                    ax.text(i_bar, start + h/2, txt, ha='center', va='center', fontsize=8)
+                        ann(0, q_val, f"{int(round(q_val))}s")
+                        ann(q_val, c_val, f"{int(round(c_val))}s")
+                        ann(q_val + c_val, o_val, f"{int(round(o_val))}s")
+
+                        # percent summary below bar (integers)
+                        if total_h > 0:
+                            pct_q = int(round(q_val / total_h * 100))
+                            pct_c = int(round(c_val / total_h * 100))
+                            pct_o = int(round(o_val / total_h * 100))
+                            ax.text(i_bar, -0.02 * max(1.0, max_total), f"Q:{pct_q}% C:{pct_c}% O:{pct_o}%", ha='center', va='top', fontsize=7)
+                    plt.tight_layout()
+                    stacked_path = os.path.join(p_dir, 'cumulative_aoi_breakdown.png')
+                    fig.savefig(stacked_path)
+                    plt.close(fig)
+            except Exception as e:
+                print(f"Could not create AOI breakdown for {pid}: {e}")
+
+            # Report progress
+            if progress_queue:
+                percent = int(100 * i / total)
+                progress_queue.put(("stage_progress", (percent, f"Participant charts: {pid} ({i}/{total})")))
+
+    finally:
+        try:
+            plt.close('all')
+        except Exception:
+            pass
+
+
+# ======================================================================================
+# Aggregate AOI features and aggregate visualization helpers
+# ======================================================================================
+def aggregate_aoi_features(df, viz_dir):
+    """Aggregate AOI times across participants per question and save a CSV summary.
+
+    Returns a DataFrame with one row per question containing:
+      - question_id
+      - t_ij (total seconds across participants)
+      - Question, Choice_A..Choice_D sums (if available)
+      - pct_time (percent of total interaction time)
+    """
+    try:
+        os.makedirs(viz_dir, exist_ok=True)
+        # Ensure required columns exist
+        if 'question_id' not in df.columns or 't_ij' not in df.columns:
+            print("aggregate_aoi_features: missing 'question_id' or 't_ij' columns — returning empty DataFrame")
+            return pd.DataFrame()
+
+        choice_cols = [c for c in df.columns if c.startswith('Choice_')]
+        agg_cols = {}
+        agg_cols['t_ij'] = 'sum'
+        if 'Question' in df.columns:
+            agg_cols['Question'] = 'sum'
+        for c in choice_cols:
+            agg_cols[c] = 'sum'
+
+        grouped = df.groupby('question_id', sort=False).agg(agg_cols).reset_index()
+        # total time across all questions
+        total_time = grouped['t_ij'].sum() if 't_ij' in grouped.columns else 0.0
+        grouped['pct_time'] = (grouped['t_ij'] / total_time * 100) if total_time > 0 else 0.0
+
+        # Save CSV summary
+        csv_path = os.path.join(viz_dir, 'avg_aoi_per_question.csv')
+        try:
+            grouped.to_csv(csv_path, index=False)
+        except Exception:
+            pass
+
+        return grouped
+    except Exception as e:
+        print(f"aggregate_aoi_features: unexpected error: {e}")
+        return pd.DataFrame()
+
+
+def visualize_aggregate_charts(agg_df, viz_dir, correct_answers=None):
+    """Create three aggregate charts for all participants:
+      - total time per question (seconds)
+      - percent time per question
+      - stacked AOI breakdown per question: Question / Correct choice / Other choices
+    """
+    try:
+        if agg_df is None or agg_df.empty:
+            print("visualize_aggregate_charts: no aggregated data provided — skipping charts")
+            return
+
+        os.makedirs(viz_dir, exist_ok=True)
+        # Standardize question labels
+        qids = agg_df['question_id'].astype(str).tolist()
+
+        # 1) Stacked seconds per question: Question / Correct / Other (this is the primary cumulative chart)
+        try:
+            choice_cols = [c for c in agg_df.columns if c.startswith('Choice_')]
+            q_series = agg_df['Question'] if 'Question' in agg_df.columns else pd.Series(0, index=agg_df.index)
+
+            correct_times = []
+            other_times = []
+            for idx, q in enumerate(agg_df['question_id'].astype(str)):
+                ccol = None
+                if correct_answers and q in correct_answers:
+                    val = correct_answers.get(q)
+                    if isinstance(val, str) and len(val) == 1 and val.isalpha():
+                        ccol = f"Choice_{val.upper()}"
+                choices_sum = 0.0
+                for c in choice_cols:
+                    choices_sum += float(agg_df.loc[idx, c] if c in agg_df.columns else 0.0) or 0.0
+                ctime = float(agg_df.loc[idx, ccol] if ccol and ccol in agg_df.columns else 0.0) if ccol else 0.0
+                other = max(0.0, choices_sum - ctime)
+                correct_times.append(ctime)
+                other_times.append(other)
+
+            totals = np.array(q_series.values, dtype=float) + np.array(correct_times, dtype=float) + np.array(other_times, dtype=float)
+            q_labels = [display_question(q) for q in agg_df['question_id'].astype(str)]
+
+            ind = np.arange(len(q_labels))
+            fig, ax = plt.subplots(figsize=(16, 6))
+            p_q = ax.bar(ind, q_series.values, color='skyblue', label='Question')
+            p_c = ax.bar(ind, correct_times, bottom=q_series.values, color='mediumseagreen', label='Correct Choice')
+            bottoms = q_series.values + np.array(correct_times)
+            p_o = ax.bar(ind, other_times, bottom=bottoms, color='lightcoral', label='Other Choices')
+
+            ax.set_xticks(ind)
+            ax.set_xticklabels(q_labels, rotation=45, ha='right')
+            ax.set_ylabel('Seconds')
+            ax.set_xlabel('Question')
+            ax.set_title('Aggregate Cumulative Time per Question — Seconds (Question / Correct / Other)')
+            ax.legend()
+
+            # Annotate segment values (seconds) and percent of total for each segment
+            for i in range(len(ind)):
+                q_val = float(q_series.values[i])
+                c_val = float(correct_times[i])
+                o_val = float(other_times[i])
+                tot = totals[i] if totals[i] > 0 else 0.0
+                # annotate each segment if large enough
+                def annotate_segment(start, height, text):
+                    if height > 0:
+                        ax.text(i, start + height/2, text, ha='center', va='center', fontsize=8, color='black')
+
+                annotate_segment(0, q_val, f"{q_val:.1f}s")
+                annotate_segment(q_val, c_val, f"{c_val:.1f}s")
+                annotate_segment(q_val + c_val, o_val, f"{o_val:.1f}s")
+
+                # percent labels below the bar
+                if tot > 0:
+                    pct_q = q_val / tot * 100
+                    pct_c = c_val / tot * 100
+                    pct_o = o_val / tot * 100
+                    pct_text = f"Q:{pct_q:.1f}% C:{pct_c:.1f}% O:{pct_o:.1f}%"
+                    ax.text(i, -0.02 * max(1.0, totals.max()), pct_text, ha='center', va='top', fontsize=7, color='black')
+
+            plt.tight_layout()
+            path1 = os.path.join(viz_dir, 'aggregate_time_per_question_seconds.png')
+            fig.savefig(path1)
+            plt.close(fig)
+        except Exception as e:
+            print(f"Could not create aggregate stacked seconds chart: {e}")
+
+        # 2) Percent time per question
+        try:
+            fig, ax = plt.subplots(figsize=(14, 6))
+            sns.barplot(x=qids, y=agg_df['pct_time'].fillna(0).values, palette='Greens_d', ax=ax)
+            ax.set_title('Aggregate: Percent Time per Question (%)')
+            ax.set_xlabel('Question')
+            ax.set_ylabel('Percent of Total Time (%)')
+            for bar, val in zip(ax.patches, agg_df['pct_time'].fillna(0).values):
+                h = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2, h + 0.5, f"{val:.1f}%", ha='center', va='bottom', fontsize=8)
+            plt.tight_layout()
+            path2 = os.path.join(viz_dir, 'aggregate_time_per_question_percent.png')
+            fig.savefig(path2)
+            plt.close(fig)
+        except Exception as e:
+            print(f"Could not create aggregate percent chart: {e}")
+
+        # 3) Stacked AOI breakdown (Question / Correct / Other)
+        try:
+            choice_cols = [c for c in agg_df.columns if c.startswith('Choice_')]
+            # prepare series
+            q_series = agg_df['Question'] if 'Question' in agg_df.columns else pd.Series(0, index=agg_df.index)
+
+            correct_times = []
+            other_times = []
+            for idx, q in enumerate(agg_df['question_id'].astype(str)):
+                # find correct choice column name
+                ccol = None
+                if correct_answers and q in correct_answers:
+                    val = correct_answers.get(q)
+                    if isinstance(val, str) and len(val) == 1 and val.isalpha():
+                        ccol = f"Choice_{val.upper()}"
+                # sum choices
+                choices_sum = 0.0
+                for c in choice_cols:
+                    choices_sum += float(agg_df.loc[idx, c] if c in agg_df.columns else 0.0) or 0.0
+                ctime = float(agg_df.loc[idx, ccol] if ccol and ccol in agg_df.columns else 0.0) if ccol else 0.0
+                other = max(0.0, choices_sum - ctime)
+                correct_times.append(ctime)
+                other_times.append(other)
+
+            ind = np.arange(len(q_series))
+            fig, ax = plt.subplots(figsize=(16, 6))
+            p1 = ax.bar(ind, q_series.values, color='skyblue')
+            p2 = ax.bar(ind, correct_times, bottom=q_series.values, color='mediumseagreen')
+            bottoms = q_series.values + np.array(correct_times)
+            p3 = ax.bar(ind, other_times, bottom=bottoms, color='lightcoral')
+            ax.set_xticks(ind)
+            ax.set_xticklabels(agg_df['question_id'].astype(str).tolist(), rotation=45, ha='right')
+            ax.set_ylabel('Seconds')
+            ax.set_xlabel('Question')
+            ax.set_title('Aggregate AOI breakdown (Question / Correct / Other)')
+            # annotate
+            for i_bar in range(len(ind)):
+                total_h = float(q_series.values[i_bar]) + float(correct_times[i_bar]) + float(other_times[i_bar])
+                ax.text(i_bar, total_h + 0.01, f"{total_h:.1f}s", ha='center', va='bottom', fontsize=8)
+            plt.tight_layout()
+            path3 = os.path.join(viz_dir, 'aggregate_aoi_breakdown.png')
+            fig.savefig(path3)
+            plt.close(fig)
+        except Exception as e:
+            print(f"Could not create aggregate AOI breakdown: {e}")
+
+    except Exception as e_outer:
+        print(f"visualize_aggregate_charts unexpected error: {e_outer}")
+
+
+# ======================================================================================
 # REPORT (MARKDOWN) GENERATOR
 # ======================================================================================
 
@@ -1505,7 +2415,7 @@ def _df_to_markdown_table(df, max_rows=20):
         df_show = df_show.head(max_rows)
     return df_show.to_markdown(index=False)
 
-def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, summary_img_path, viz_dir, config=None):
+def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, summary_img_path, viz_dir, config=None, gaze_validity_stats=None, participant_summary=None, removed_samples_summary=None):
     """
     Creates a structured HTML report describing pipeline stages and results,
     embedding images and tables.
@@ -1617,8 +2527,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
 
     html_content.append("        <h2 class=\"mt-5\">Stage 1 — Data Cleaning and Interaction Time (t_ij) Computation</h2>")
     html_content.append("        <p><strong>Objective:</strong> This initial stage focuses on refining raw eye-tracking data by removing erroneous gaze samples and calculating the total interaction time for each participant-question pair.</p>")
-    html_content.append("<li>Invalid samples are removed only when the validity flag (BPOGV) is 0 <b>and</b> when long consecutive zero sequences in gaze coordinates (BPOGX, BPOGY) occur. "
-            "Isolated single zeros are tolerated and not removed. This reflects the new AND logic with consecutive-zero detection.</li>")
+    html_content.append("        <p>The primary cleaning operation involves filtering out entire trials (participant-question pairs) where the ratio of invalid gaze samples exceeds a predefined threshold. Invalid gaze samples are identified by the `BPOGV` flag (where a value other than 1 indicates invalidity) and by sequences of zero-coordinates, which often signify tracker data loss. This ensures that the subsequent analysis is based on high-quality interaction data.</p>")
     html_content.append("        <ul>")
     html_content.append("            <li><strong>Invalid Gaze Sample Removal:</strong> Gaze samples are considered invalid and subsequently removed if their `BPOGV` (Binocular Point of Gaze Validity) value is not equal to 1, or if their gaze coordinates (`BPOGX`, `BPOGY`) are precisely (0,0). These conditions typically indicate data loss or tracking errors.</li>")
     html_content.append("            <li><strong>Interaction Time (t_ij) Computation:</strong> For each unique combination of participant, question, and exam part, the total interaction duration, denoted as <strong>t_ij</strong>, is calculated. This metric represents the cumulative time a participant spent viewing a specific question. Following this, interactions shorter than 1 second are removed, as they are considered too brief to represent meaningful engagement.</li>")
@@ -1626,6 +2535,15 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     if 't_ij' in final_df.columns:
         html_content.append(f"        <p><strong>Summary Statistics for t_ij:</strong> Mean = {mean_val:.2f}s, Median = {median_val:.2f}s, Standard Deviation = {std_val:.2f}s</p>")
         html_content.append("        <div style=\"width: 60%; margin: 20px auto;\"><canvas id=\"tijSummaryChart\"></canvas></div>")
+        # Include a sample table of gaze validity stats (if provided)
+        try:
+            if gaze_validity_stats is not None and not gaze_validity_stats.empty:
+                html_content.append("        <h4 class=\"mt-3\">Gaze Validity Statistics (sample)</h4>")
+                html_content.append("        <p>The table below shows the count and ratio of invalid gaze samples for each trial. Trials with an invalid ratio above the configured threshold are excluded from further analysis. A full CSV is available in the intermediate outputs folder.</p>")
+                html_content.append(gaze_validity_stats.head(50).to_html(index=False, classes='table table-striped table-bordered'))
+        except Exception:
+            # If embedding fails, continue without breaking report generation
+            pass
     html_content.append("        <div class=\"section-divider\"></div>")
 
     html_content.append("        <h2 class=\"mt-5\">Stage 2 — Fast Outlier Detection (Lower Bound - LB)</h2>")
@@ -1709,6 +2627,10 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("                <ul>")
     html_content.append("                    <li><code>NP</code> (Normal Performance): Correct answer with `t_ij` within expected range.</li>")
     html_content.append("                    <li><code>UP</code> (Unusual Performance): Incorrect answer, or correct answer with `t_ij` exceeding `UF_C`.</li>")
+    html_content.append("                    <li><code>INVALID</code>: Interaction flagged due to `invalid_time` in Stage 2.</li>")
+    html_content.append("                    <li><code>NA_no_correct</code>: Not Applicable, due to insufficient correct answers to compute `UF_C`.</li>")
+    html_content.append("                </ul>")
+    html_content.append("            <li><strong>`Reading_duration_s`</strong>: The estimated time, in seconds, a participant spent reading the question and options.</li>")
     html_content.append("                    <li><code>INVALID</code>: Interaction flagged due to `invalid_time` in Stage 2.</li>")
     html_content.append("                    <li><code>NA_no_correct</code>: Not Applicable, due to insufficient correct answers to compute `UF_C`.</li>")
     html_content.append("                </ul>")
@@ -1856,6 +2778,34 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
                 html_content.append(summary_table_df.to_html(index=False, classes='table table-striped table-bordered'))
             except Exception as e:
                 print(f"Could not read or embed AOI summary CSV: {e}")
+
+    # Aggregate project-level charts (generated earlier)
+    agg_sec = os.path.join(viz_dir, 'aggregate_time_per_question_seconds.png')
+    agg_pct = os.path.join(viz_dir, 'aggregate_time_per_question_percent.png')
+    agg_stack = os.path.join(viz_dir, 'aggregate_aoi_breakdown.png')
+    agg_csv = os.path.join(viz_dir, 'avg_aoi_per_question.csv')
+
+    if os.path.exists(agg_sec) or os.path.exists(agg_pct) or os.path.exists(agg_stack):
+        html_content.append("        <h3 class=\"mt-4\">Aggregate Cumulative Charts (All Participants)</h3>")
+        html_content.append("        <p>Project-level cumulative charts aggregated across all participants. These summarize total and relative attention per question.</p>")
+        html_content.append("        <div style=\"display:flex;flex-wrap:wrap;gap:20px;margin-bottom:20px;\">")
+        if os.path.exists(agg_sec):
+            rel = os.path.relpath(agg_sec, os.path.dirname(report_path)).replace('\\', '/')
+            html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{rel}\" alt=\"Aggregate time seconds\" class=\"img-fluid\"></div>")
+        if os.path.exists(agg_pct):
+            rel = os.path.relpath(agg_pct, os.path.dirname(report_path)).replace('\\', '/')
+            html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{rel}\" alt=\"Aggregate time percent\" class=\"img-fluid\"></div>")
+        if os.path.exists(agg_stack):
+            rel = os.path.relpath(agg_stack, os.path.dirname(report_path)).replace('\\', '/')
+            html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{rel}\" alt=\"Aggregate AOI breakdown\" class=\"img-fluid\"></div>")
+        html_content.append("        </div>")
+        if os.path.exists(agg_csv):
+            try:
+                agg_df = pd.read_csv(agg_csv)
+                html_content.append("        <h4 class=\"mt-3\">Aggregate Numeric Summary (per question)</h4>")
+                html_content.append(agg_df.head(100).to_html(index=False, classes='table table-striped table-bordered'))
+            except Exception:
+                pass
     
     # Summary Plots
     if summary_img_path and os.path.exists(summary_img_path):
@@ -1884,10 +2834,38 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
         html_content.append("        <h3 class=\"mt-4\">AOI Time per Label</h3>")
         html_content.append(f"        <img src=\"{aoi_l_rel_path}\" alt=\"{aoi_l_path}\" class=\"img-fluid\">")
 
+    # Per-participant cumulative charts (seconds, percent, label distribution)
+    participant_bars_dir = os.path.join(viz_dir, 'participant_bars')
+    if os.path.exists(participant_bars_dir):
+        html_content.append("        <h3 class=\"mt-4\">Per-participant Cumulative Time & Label Plots</h3>")
+        try:
+            p_folders = sorted([d for d in os.listdir(participant_bars_dir) if os.path.isdir(os.path.join(participant_bars_dir, d))])
+            for p_folder in p_folders:
+                p_dir = os.path.join(participant_bars_dir, p_folder)
+                html_content.append(f"        <h4>{display_participant(p_folder)}</h4>")
+                sec_path = os.path.join(p_dir, 'cumulative_time_seconds.png')
+                pct_path = os.path.join(p_dir, 'cumulative_time_percent.png')
+                lab_path = os.path.join(p_dir, 'label_distribution.png')
+
+                html_content.append("        <div style=\"display:flex;flex-wrap:wrap;gap:20px;margin-bottom:20px;\">")
+                if os.path.exists(sec_path):
+                    sec_rel = os.path.relpath(sec_path, os.path.dirname(report_path)).replace('\\', '/')
+                    html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{sec_rel}\" alt=\"Time seconds {p_folder}\" class=\"img-fluid\"></div>")
+                if os.path.exists(pct_path):
+                    pct_rel = os.path.relpath(pct_path, os.path.dirname(report_path)).replace('\\', '/')
+                    html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{pct_rel}\" alt=\"Time percent {p_folder}\" class=\"img-fluid\"></div>")
+                if os.path.exists(lab_path):
+                    lab_rel = os.path.relpath(lab_path, os.path.dirname(report_path)).replace('\\', '/')
+                    html_content.append(f"            <div style=\"flex:0 0 320px;\"><img src=\"{lab_rel}\" alt=\"Label distribution {p_folder}\" class=\"img-fluid\"></div>")
+                html_content.append("        </div>")
+        except Exception:
+            html_content.append("        <p><em>Could not list per-participant charts.</em></p>")
+
     if all_participant_folders:
         html_content.append("        <h3 class=\"mt-4\">Gaze Heatmaps and Scatterplots</h3>")
         for p_folder in all_participant_folders:
-            html_content.append(f"        <h4>{p_folder.replace('participant_', 'Participant ')}</h4>")
+            # Display participant with zero-padded number (keep filesystem folder names unchanged)
+            html_content.append(f"        <h4>{display_participant(p_folder)}</h4>")
             
             participant_heatmaps_dir = os.path.join(heatmaps_base_dir, p_folder)
             participant_scatterplots_dir = os.path.join(scatterplots_base_dir, p_folder)
@@ -1907,6 +2885,8 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
                 all_q_ids = sorted(list(set([f.replace('gaze_heatmap_', '').replace('.png', '') for f in heatmap_files]) |\
                                          set([f.replace('gaze_point_', '').replace('.png', '') for f in scatterplot_files])))
 
+                # Sort question ids numerically (by their numeric suffix) so ordering is correct
+                all_q_ids = sorted(all_q_ids, key=_extract_numeric_suffix)
                 for q_id in all_q_ids:
                     heatmap_img_file = f'gaze_heatmap_{q_id}.png'
                     scatterplot_img_file = f'gaze_point_{q_id}.png'
@@ -1914,59 +2894,60 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
                     heatmap_exists = os.path.exists(os.path.join(part_heatmaps_path, heatmap_img_file))
                     scatterplot_exists = os.path.exists(os.path.join(part_scatterplots_path, scatterplot_img_file))
 
-                    html_content.append(f"        <h6>Question {q_id}</h6>")
+                    html_content.append(f"        <h6>Question {display_question(q_id)}</h6>")
                     html_content.append("        <div style=\"display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin-bottom: 20px;\">")
 
                     if heatmap_exists:
                         heatmap_img_path = os.path.join(part_heatmaps_path, heatmap_img_file)
                         heatmap_rel_path = os.path.relpath(heatmap_img_path, os.path.dirname(report_path)).replace('\\', '/')
-                        html_content.append(f"            <div style=\"flex: 1; min-width: 45%;\"><img src=\"{heatmap_rel_path}\" alt=\"Heatmap {q_id}\" class=\"img-fluid\"></div>")
+                        html_content.append(f"            <div style=\"flex: 1; min-width: 45%;\"><img src=\"{heatmap_rel_path}\" alt=\"Heatmap {display_question(q_id)}\" class=\"img-fluid\"></div>")
                     
                     if scatterplot_exists:
                         scatterplot_img_path = os.path.join(part_scatterplots_path, scatterplot_img_file)
                         scatterplot_rel_path = os.path.relpath(scatterplot_img_path, os.path.dirname(report_path)).replace('\\', '/')
-                        html_content.append(f"            <div style=\"flex: 1; min-width: 45%;\"><img src=\"{scatterplot_rel_path}\" alt=\"Scatterplot {q_id}\" class=\"img-fluid\"></div>")
+                        html_content.append(f"            <div style=\"flex: 1; min-width: 45%;\"><img src=\"{scatterplot_rel_path}\" alt=\"Scatterplot {display_question(q_id)}\" class=\"img-fluid\"></div>")
                     
                     html_content.append("        </div>")
 
     html_content.append("</div>")
-    html_content.append("</body>")
-    html_content.append("<div id=\"myModal\" class=\"modal\">")
+    # Modal (placed inside <body>) and safer JS handlers
+    html_content.append("    <div id=\"myModal\" class=\"modal\">")
     html_content.append("        <span class=\"close\">&times;</span>")
     html_content.append("        <img class=\"modal-content\" id=\"img01\">")
     html_content.append("        <div id=\"caption\"></div>")
     html_content.append("    </div>")
     html_content.append("<script>")
-    html_content.append("        // Get the modal")
+    html_content.append("        // Get the modal and elements")
     html_content.append("        var modal = document.getElementById(\"myModal\");")
-    html_content.append("")
-    html_content.append("        // Get the image and insert it inside the modal - use its \"alt\" text as a caption")
     html_content.append("        var modalImg = document.getElementById(\"img01\");")
     html_content.append("        var captionText = document.getElementById(\"caption\");")
     html_content.append("")
-    html_content.append("        document.querySelectorAll('img').forEach(item => {")
+    html_content.append("        // Attach click only to images inside the main container to avoid modal internal images")
+    html_content.append("        document.querySelectorAll('.container img').forEach(item => {")
     html_content.append("            item.onclick = function(){")
+    html_content.append("                if (!modal) return;")
     html_content.append("                modal.style.display = \"block\";")
     html_content.append("                modalImg.src = this.src;")
-    html_content.append("                captionText.innerHTML = this.alt;")
+    html_content.append("                captionText.innerHTML = this.alt || ''; ")
     html_content.append("            }")
     html_content.append("        });")
     html_content.append("")
     html_content.append("        // Get the <span> element that closes the modal")
     html_content.append("        var span = document.getElementsByClassName(\"close\")[0];")
-    html_content.append("")
-    html_content.append("        // When the user clicks on <span> (x), close the modal")
-    html_content.append("        span.onclick = function() {")
-    html_content.append("            modal.style.display = \"none\";")
+    html_content.append("        if (span) {")
+    html_content.append("            span.onclick = function() {")
+    html_content.append("                if (modal) modal.style.display = \"none\";")
+    html_content.append("            }")
     html_content.append("        }")
     html_content.append("")
     html_content.append("        // Close the modal when clicking outside the image")
     html_content.append("        window.onclick = function(event) {")
-    html_content.append("            if (event.target == modal) {")
-    html_content.append("                modal.style.display = \"none\";")
-    html_content.append("            }")
+    html_content.append("            try {")
+    html_content.append("                if (event.target == modal) { if (modal) modal.style.display = \"none\"; }")
+    html_content.append("            } catch(e) {}")
     html_content.append("        }")
     html_content.append("</script>")
+    html_content.append("</body>")
     html_content.append("</html>")
 
     # Write the assembled HTML content to the output report file
@@ -2265,6 +3246,7 @@ def main():
             
     # --- Pipeline Logic (to be run in a separate thread) ---
     def pipeline_logic(progress_queue, cancel_event):
+        import traceback
         summary_img_path = None
         try:
             # Stage 0: Initialization
@@ -2319,7 +3301,18 @@ def main():
             questions_path = os.path.join(script_dir, config.get('Paths', 'questions_json', fallback='questions.json'))
             question_exams_dir = os.path.join(script_dir, config.get('Paths', 'question_exams_dir', fallback='question_exams'))
             update_pipeline_progress(progress_queue, 1, 1, "Loading participant data...")
-            raw_df = load_all_participant_data(output_dir)
+            participant_ids = [f"participant_{i}" for i in participant_range]
+            question_ids    = [f"Q{i}" for i in question_range]
+
+            # فقط همان‌ها را با ستون‌های حداقلی و dtype سبک بخوان
+            usecols = ['BPOGX', 'BPOGY', 'FPOGS', 'BPOGV']
+            dtypes  = {'BPOGX':'float32','BPOGY':'float32','FPOGS':'float32','BPOGV':'int8'}
+            raw_df = load_all_participant_data(output_dir,
+                                   participant_ids=participant_ids,
+                                   question_ids=question_ids,
+                                   usecols=usecols,
+                                   dtypes=dtypes)
+
             if raw_df.empty:
                 progress_queue.put(("error", "No participant data loaded."))
                 return
@@ -2376,26 +3369,52 @@ def main():
 
             # Stage 2: Data Cleaning
             update_pipeline_progress(progress_queue, 2, 0, "Removing invalid gaze samples...")
-            time_df, gaze_validity_stats, participant_summary = clean_and_prepare_data(raw_df.copy(), invalid_gaze_threshold=float(invalid_gaze_threshold), consecutive_zero_threshold=consecutive_zero_threshold, report_dir=reports_dir)
-            # Save diagnostics already written inside function; also save question distribution
-            qdist = question_part_distribution(question_exams_dir, output_dir)
             try:
-                qdist.to_csv(os.path.join(reports_dir, 'question_part_distribution.csv'), index=False)
-                print(f"Saved question part distribution to {os.path.join(reports_dir, 'question_part_distribution.csv')}")
-            except Exception as e:
-                print(f"Could not save question part distribution: {e}")
-            update_pipeline_progress(progress_queue, 2, 1, "Computing t_ij per question...")
-            if save_stage_outputs:
-                time_df.to_csv(os.path.join(intermediate_output_dir, 'stage1_time_data.csv'), index=False)
-            if cancel_event.is_set():
+                # Use streaming processing to avoid high memory usage
+                output_dir = os.path.join(script_dir, config.get('Paths', 'output_dir', fallback='outputs'))
+                intermediate_output_dir = os.path.join(script_dir, 'intermediate_processed_data')
+                os.makedirs(intermediate_output_dir, exist_ok=True)
+                time_df, gaze_validity_stats, participant_summary, removed_samples_summary = stream_clean_all(output_dir, participant_ids, question_ids, invalid_gaze_threshold, consecutive_zero_threshold, reports_dir, intermediate_output_dir, progress_queue, cancel_event, part_data=part_data)
+            except MemoryError as me:
+                import traceback
+                tb = traceback.format_exc()
+                err_path = os.path.join(reports_dir, 'memory_error_traceback.txt')
+                try:
+                    with open(err_path, 'w', encoding='utf-8') as _f:
+                        _f.write('MemoryError during streaming data cleaning stage:\n')
+                        _f.write(str(me) + '\n\n')
+                        _f.write(tb)
+                except Exception:
+                    pass
+                msg = (
+                    "MemoryError: the dataset is too large to process with current settings even under streaming. "
+                    "I wrote a traceback to: {}. Suggestions: run with fewer participants (e.g. 1-5), "
+                    "disable heavy visualizations (heatmaps/scatterplots), or run on a machine with more RAM or swap enabled."
+                ).format(err_path)
+                progress_queue.put(("error", msg))
                 return
-            # Stage 3: Outlier Detection
-            update_pipeline_progress(progress_queue, 3, 0, "Computing outlier stats...")
-            outlier_df, stats_all = detect_outliers(time_df.copy(), time_cap_s=time_cap_s, exclude_censored=exclude_censored, iqr_multiplier=lb_multiplier)
+                # Save diagnostics already written inside function; also save question distribution
+                # (Removed unused pipeline steps literal that caused a syntax error)
             update_pipeline_progress(progress_queue, 3, 1, "Flagging outliers...")
+            # Compute outliers and per-question stats from the cleaned time_df
+            try:
+                outlier_df, stats_all = detect_outliers(time_df.copy(), time_cap_s=time_cap_s, exclude_censored=exclude_censored, iqr_multiplier=lb_multiplier)
+            except Exception as e_det:
+                # If outlier detection fails, log and continue with time_df as a fallback
+                if progress_queue:
+                    progress_queue.put(("log", f"Warning: detect_outliers failed: {e_det}. Continuing with raw time_df."))
+                outlier_df = time_df.copy()
+                stats_all = pd.DataFrame()
+
             if save_stage_outputs:
-                outlier_df.to_csv(os.path.join(intermediate_output_dir, 'stage2_outlier_data.csv'), index=False)
-                stats_all.to_csv(os.path.join(intermediate_output_dir, 'stage2_outlier_stats.csv'), index=False)
+                try:
+                    outlier_df.to_csv(os.path.join(intermediate_output_dir, 'stage2_outlier_data.csv'), index=False)
+                except Exception:
+                    pass
+                try:
+                    stats_all.to_csv(os.path.join(intermediate_output_dir, 'stage2_outlier_stats.csv'), index=False)
+                except Exception:
+                    pass
             if cancel_event.is_set():
                 return
             # Stage 4: Labeling
@@ -2408,127 +3427,246 @@ def main():
             if cancel_event.is_set():
                 return
             # Stage 5: Feature Engineering
-            update_pipeline_progress(progress_queue, 5, 0, "Assigning AOIs and extracting phases...")
-            processed_df = engineer_features(raw_df.copy(), labeled_df.copy())
-            update_pipeline_progress(progress_queue, 5, 1, "Saving Stage 4 data...")
-            if save_stage_outputs:
-                processed_df.to_csv(os.path.join(intermediate_output_dir, 'stage4_processed_data.csv'), index=False)
-            # ذخیره داده نهایی در processed_data/final_processed_data.csv
             try:
-                os.makedirs(os.path.join(script_dir, 'processed_data'), exist_ok=True)
-                final_csv_path = os.path.join(script_dir, 'processed_data', 'final_processed_data.csv')
-                processed_df.to_csv(final_csv_path, index=False, encoding='utf-8')
-                progress_queue.put(("log", f"Final processed data saved to {final_csv_path}"))
-            except Exception as e:
-                progress_queue.put(("log", f"Error saving final processed data: {e}"))
+                print("[Feature Engineering] Assigning AOIs and extracting phases...")
+                update_pipeline_progress(progress_queue, 4, 1, "Assigning AOIs and extracting phases...")
 
-            # نمایش نمودار نهایی (توزیع t_ij یا برچسب‌ها)
-            try:
-                plt.figure(figsize=(10, 6))
-                if 'label' in processed_df.columns:
-                    sns.countplot(data=processed_df, x='label', order=['NP', 'UP', 'INVALID', 'NA_no_correct'])
-                    plt.title('Distribution of Behavioral Labels (Final Data)')
-                    plt.xlabel('Label')
-                    plt.ylabel('Count')
-                elif 't_ij' in processed_df.columns:
-                    sns.boxplot(data=processed_df, x='part', y='t_ij')
-                    plt.title('Distribution of t_ij per Part (Final Data)')
-                    plt.xlabel('Exam Part')
-                    plt.ylabel('t_ij (seconds)')
-                else:
-                    plt.text(0.5, 0.5, 'No suitable data for final plot', ha='center', va='center')
-                plt.tight_layout()
-                plt.show()
-                progress_queue.put(("log", "Final summary plot displayed."))
-            except Exception as e:
-                progress_queue.put(("log", f"Error displaying final summary plot: {e}"))
-            if cancel_event.is_set():
-                return
-            # Stage 6: Visualization
-            vis_idx = 0
-            if selected_plots.get('summary_plots'):
-                update_pipeline_progress(progress_queue, 6, vis_idx, "Generating summary plots...")
-                fig_summary, axes_summary = plt.subplots(2, 2, figsize=(20, 15))
-                fig_summary.suptitle('Pipeline Stage Summaries', fontsize=20)
-                visualize_stage1(time_df, axes_summary[0, 0])
-                visualize_stage2(outlier_df, axes_summary[0, 1])
-                visualize_stage3(labeled_df, axes_summary[1, 0])
-                visualize_stage4(processed_df, axes_summary[1, 1])
-                plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-                summary_img_path = os.path.join(viz_dir, 'pipeline_summary.png')
-                plt.savefig(summary_img_path)
-                plt.close(fig_summary)
-                vis_idx += 1
-            # AOI summary per question (new plot) - ensure it's generated before other per-question visuals
-            if selected_plots.get('aoi_summary_per_question'):
-                update_pipeline_progress(progress_queue, 6, vis_idx, "Generating AOI summary per question...")
+                # مسیر خروجی فازها (اگر قبلاً تعریف نشده)
+                phase_output_path = os.path.join(reports_dir, "phases_per_participant.csv")
+                # Try to remove previous file if present; ignore failures (e.g. locked file)
+                if os.path.exists(phase_output_path):
+                    try:
+                        os.remove(phase_output_path)
+                    except Exception as e_rm:
+                        # Log and continue; we'll fallback to per-participant files if needed
+                        if progress_queue:
+                            progress_queue.put(("log", f"Warning: could not remove existing phase output {phase_output_path}: {e_rm}. Will attempt to append or write per-participant files."))
+
+                # Prepare a base dataframe for AOI/phase extraction. Use timestamp column name if present.
+                base_df = raw_df  # if your aggregated stage data lives under a different name, replace here
+
+                # Normalize timestamp column name if necessary (fallback to 'FPOGS' used elsewhere)
+                if 'timestamp' not in base_df.columns:
+                    if 'FPOGS' in base_df.columns:
+                        base_df = base_df.rename(columns={'FPOGS': 'timestamp'})
+
+                # Keep only necessary columns to reduce memory
+                need_cols = ['participant_id', 'question_id', 'timestamp', 'BPOGX', 'BPOGY']
+                base_df = base_df[[c for c in need_cols if c in base_df.columns]].copy()
+
+                # Stable sort to ensure ordered processing
+                base_df.sort_values(['participant_id', 'question_id', 'timestamp'], inplace=True)
+
+                # Process per-participant to keep memory usage low
+                unique_pids = base_df['participant_id'].dropna().unique().tolist()
+
+                for i_pid, pid in enumerate(unique_pids, start=1):
+                    part_df = base_df[base_df['participant_id'] == pid]
+                    q_groups = part_df.groupby('question_id', sort=False)
+
+                    phase_rows = []
+                    for qid, g in q_groups:
+                        # Lightweight numpy arrays without extra copies
+                        x_np = g['BPOGX'].to_numpy(dtype='float32', copy=False)
+                        y_np = g['BPOGY'].to_numpy(dtype='float32', copy=False)
+                        ts_np = g['timestamp'].to_numpy(copy=False)
+
+                        codes = assign_aoi_code_fast(x_np, y_np)
+                        phases_df = phases_from_codes_sorted(ts_np, codes)
+                        phases_df.insert(0, 'question_id', qid)
+                        phases_df.insert(0, 'participant_id', pid)
+                        phase_rows.append(phases_df)
+
+                    if phase_rows:
+                        out = pd.concat(phase_rows, ignore_index=True)
+                        # Attempt to append to the canonical phases file. If permission denied (file locked)
+                        # fall back to writing a per-participant file so the pipeline doesn't crash.
+                        try:
+                            out.to_csv(
+                                phase_output_path,
+                                mode='a',
+                                header=not os.path.exists(phase_output_path),
+                                index=False,
+                            )
+                        except PermissionError as pe:
+                            # fallback path per participant
+                            alt_path = os.path.join(reports_dir, f"phases_per_participant_{pid}.csv")
+                            try:
+                                out.to_csv(
+                                    alt_path,
+                                    mode='a',
+                                    header=not os.path.exists(alt_path),
+                                    index=False,
+                                )
+                                if progress_queue:
+                                    progress_queue.put(("log", f"Permission denied writing {phase_output_path}; wrote per-participant phases to {alt_path} instead."))
+                            except Exception as e_alt:
+                                # If even the alt fails, log and continue
+                                if progress_queue:
+                                    progress_queue.put(("log", f"Failed to write phase output for {pid} to fallback file: {e_alt}"))
+                        except Exception as e_w:
+                            if progress_queue:
+                                progress_queue.put(("log", f"Failed to write phase output for {pid}: {e_w}"))
+
+                    # free temporary memory
+                    del part_df, q_groups, phase_rows
+                    gc.collect()
+
+                    if progress_queue:
+                        percent = int(100 * i_pid / max(1, len(unique_pids)))
+                        progress_queue.put(("stage_progress", (percent, f"Assigning AOIs: {pid} ({i_pid}/{len(unique_pids)})")))
+
+                print(f"--- AOI/Phase extraction done. Phase file: {phase_output_path}")
+
+                # Safe visualization step (best-effort; failures should not crash the pipeline)
                 try:
-                    visualize_aoi_summary_per_question(processed_df, correct_answers, viz_dir, progress_queue, cancel_event)
-                except Exception as e:
-                    progress_queue.put(("log", f"Error generating AOI summary per question: {e}"))
-                vis_idx += 1
-            if selected_plots.get('heatmaps'):
-                update_pipeline_progress(progress_queue, 6, vis_idx, "Generating heatmaps...")
-                visualize_heatmaps(raw_df, viz_dir, question_texts, bg_image_part1, bg_image_part2, config, progress_queue, cancel_event)
-                vis_idx += 1
-            if selected_plots.get('scatterplots'):
-                update_pipeline_progress(progress_queue, 6, vis_idx, "Generating scatter plots...")
-                visualize_scatterplots(raw_df, viz_dir, question_texts, bg_image_part1, bg_image_part2, config, progress_queue, cancel_event)
-                vis_idx += 1
-            if selected_plots.get('aoi_per_question'):
-                update_pipeline_progress(progress_queue, 6, vis_idx, "Generating AOI time per question chart...")
-                visualize_aoi_time_per_question(processed_df, viz_dir, question_texts, progress_queue, cancel_event)
-                vis_idx += 1
-            if selected_plots.get('aoi_per_label'):
-                update_pipeline_progress(progress_queue, 6, vis_idx, "Generating AOI time per label chart...")
-                visualize_aoi_time_per_label(processed_df, viz_dir, progress_queue, cancel_event)
-                vis_idx += 1
-            # Stage 7: Report
-            update_pipeline_progress(progress_queue, 7, 0, "Generating HTML report...")
-            
-            # Calculate final statistics
-            n_participants = processed_df['participant_id'].nunique()
-            n_questions = processed_df['question_id'].nunique()
-            label_counts = labeled_df['label'].value_counts(dropna=False).rename_axis('label').reset_index(name='count')
+                    update_pipeline_progress(progress_queue, 6, 0, "Generating visualizations...")
 
-            # Add overall statistical summary to the progress monitor
-            summary_log = "\n--- Overall Statistical Summary ---\n"
-            summary_log += f"Total Participants Analyzed: {n_participants}\n"
-            summary_log += f"Total Questions Analyzed: {n_questions}\n"
-            if 't_ij' in processed_df.columns:
-                summary_log += f"Overall Mean Interaction Time (t_ij): {processed_df['t_ij'].mean():.2f} seconds\n"
-                summary_log += f"Overall Median Interaction Time (t_ij): {processed_df['t_ij'].median():.2f} seconds\n"
-            if 'label' in labeled_df.columns:
-                summary_log += "Overall Behavioral Label Distribution:\n"
-                for k, v in label_counts.set_index('label')['count'].to_dict().items():
-                    summary_log += f"    {k}: {v} instances\n"
-            progress_queue.put(("log", summary_log))
+                    # First, attempt to engineer AOI features so visualizations that depend on AOI_* columns
+                    # (e.g., Choice_A..Choice_D, Question) can run. If engineer_features fails, continue but
+                    # those visuals will be skipped (they check for required columns).
+                    final_df = None
+                    try:
+                        final_df = engineer_features(raw_df, labeled_df.copy())
+                        # If engineering succeeded, also update labeled_df copy with AOI wide columns where available
+                        if final_df is not None and not final_df.empty:
+                            # Merge back AOI columns into a working labeled_df_for_viz to preserve original labeled_df
+                            labeled_df_for_viz = pd.merge(labeled_df, final_df.drop(columns=[c for c in ['participant_id','question_id'] if c in final_df.columns], errors='ignore'), on=['participant_id','question_id'], how='left')
+                        else:
+                            labeled_df_for_viz = labeled_df
+                    except Exception as e_eng:
+                        labeled_df_for_viz = labeled_df
+                        final_df = None
+                        if progress_queue:
+                            progress_queue.put(("log", f"Warning: engineer_features failed: {e_eng}. AOI-dependent visuals may be skipped."))
 
-            report_path = os.path.join(reports_dir, 'report.html')
-            write_html_report(report_path, stats_all, stats_c, labeled_df, processed_df, summary_img_path, viz_dir, config)
-            monitor.report_path = report_path
-            progress_queue.put(("done", None))
-        except Exception as e:
-            progress_queue.put(("error", f"An error occurred: {e}"))
-        finally:
-            # Restore stdout
-            pass
-    # --- Run Pipeline ---
-    pipeline_thread = threading.Thread(target=pipeline_logic, args=(progress_queue, cancel_event))
-    monitor.pipeline_thread = pipeline_thread  # Pass the thread to the monitor for access in _on_closing
-    pipeline_thread.start()
-    
+                    # First, compute aggregate AOI summaries and create project-level charts
+                    try:
+                        # Use legacy AOI summary implementation from the older pipeline
+                        # The OLD implementation creates the stacked seconds+percent AOI summary
+                        # and writes avg_aoi_per_question.csv. Call it directly to reproduce
+                        # the exact charts that were previously produced.
+                        visualize_aoi_summary_per_question(labeled_df_for_viz, correct_answers, viz_dir, progress_queue, cancel_event=cancel_event)
+                    except Exception as e_agg:
+                        if progress_queue:
+                            progress_queue.put(("log", f"Warning: legacy AOI summary visuals failed: {e_agg}"))
+
+                    if selected_plots.get('aoi_summary_per_question'):
+                        visualize_aoi_summary_per_question(labeled_df_for_viz, correct_answers, viz_dir, progress_queue, cancel_event=cancel_event)
+                    if selected_plots.get('aoi_per_question'):
+                        visualize_aoi_time_per_question(labeled_df_for_viz, viz_dir, question_texts, progress_queue, cancel_event=cancel_event)
+                    if selected_plots.get('aoi_per_label'):
+                        visualize_aoi_time_per_label(labeled_df_for_viz, viz_dir, progress_queue, cancel_event=cancel_event)
+
+                    # Per-participant cumulative charts (seconds + percent + label distribution)
+                    if selected_plots.get('summary_plots'):
+                        visualize_participant_cumulative(labeled_df_for_viz, viz_dir, progress_queue=progress_queue, cancel_event=cancel_event, correct_answers=correct_answers)
+
+                    if selected_plots.get('heatmaps'):
+                        visualize_heatmaps(raw_df, viz_dir, question_texts, bg_image_part1, bg_image_part2, config=config, progress_queue=progress_queue, cancel_event=cancel_event)
+                    if selected_plots.get('scatterplots'):
+                        visualize_scatterplots(raw_df, viz_dir, question_texts, bg_image_part1, bg_image_part2, config=config, progress_queue=progress_queue, cancel_event=cancel_event)
+                except Exception as e_vis:
+                    # Log visualization errors but continue to report generation
+                    tb_vis = traceback.format_exc()
+                    vis_err_path = os.path.join(reports_dir, 'visualization_error_traceback.txt')
+                    try:
+                        with open(vis_err_path, 'a', encoding='utf-8') as _f:
+                            _f.write('\n--- Visualization error ---\n')
+                            _f.write(tb_vis)
+                    except Exception:
+                        pass
+                    if progress_queue:
+                        progress_queue.put(("log", f"Visualization error: {e_vis}. See {vis_err_path} for traceback."))
+
+                # Final report generation
+                # Create a 2x2 pipeline summary figure (Stage 1-4) and save it so the report can embed it.
+                try:
+                    # Map a processed_df variable to the engineered final_df when available, else fall back to labeled_df
+                    processed_df = final_df if ('final_df' in locals() and final_df is not None and not final_df.empty) else labeled_df
+
+                    fig_summary, axes_summary = plt.subplots(2, 2, figsize=(20, 15))
+                    fig_summary.suptitle('Pipeline Stage Summaries', fontsize=20)
+                    visualize_stage1(time_df,   axes_summary[0, 0])
+                    visualize_stage2(outlier_df,axes_summary[0, 1])
+                    visualize_stage3(labeled_df,axes_summary[1, 0])
+                    visualize_stage4(processed_df, axes_summary[1, 1])
+                    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+                    summary_img_path = os.path.join(viz_dir, 'pipeline_summary.png')
+                    plt.savefig(summary_img_path)
+                    plt.close(fig_summary)
+                except Exception as e_sum:
+                    # Non-fatal: log and continue without a summary image
+                    try:
+                        if progress_queue:
+                            progress_queue.put(("log", f"Could not create pipeline summary image: {e_sum}"))
+                    except Exception:
+                        pass
+
+                update_pipeline_progress(progress_queue, 7, 0, "Generating report...")
+                report_path = os.path.join(reports_dir, 'pipeline_report.html')
+                try:
+                    write_html_report(report_path, stats_all, stats_c, labeled_df, (final_df if 'final_df' in locals() and final_df is not None else labeled_df), summary_img_path, viz_dir, config=config, gaze_validity_stats=gaze_validity_stats, participant_summary=participant_summary, removed_samples_summary=removed_samples_summary)
+                    if progress_queue:
+                        progress_queue.put(("log", f"Report written to {report_path}"))
+                        progress_queue.put(("done", None))
+                except Exception as e_report:
+                    tb_report = traceback.format_exc()
+                    report_err_path = os.path.join(reports_dir, 'pipeline_exception.txt')
+                    try:
+                        with open(report_err_path, 'w', encoding='utf-8') as _f:
+                            _f.write(tb_report)
+                    except Exception:
+                        pass
+                    if progress_queue:
+                        progress_queue.put(("error", f"Failed to write report: {e_report}. Traceback saved to {report_err_path}"))
+
+            except Exception as e_main_inner:
+                tb = traceback.format_exc()
+                err_path = os.path.join(reports_dir, 'pipeline_exception.txt')
+                try:
+                    with open(err_path, 'w', encoding='utf-8') as _f:
+                        _f.write(tb)
+                except Exception:
+                    pass
+                if progress_queue:
+                    progress_queue.put(("error", f"An error occurred during feature engineering: {e_main_inner}. See {err_path} for details."))
+                return
+
+        # End of pipeline_logic try/catch. Add an outer exception handler to catch unexpected errors
+        except Exception as e_pipeline:
+            tb_outer = traceback.format_exc()
+            err_path_outer = os.path.join(reports_dir, 'pipeline_exception_outer.txt')
+            try:
+                with open(err_path_outer, 'w', encoding='utf-8') as _f:
+                    _f.write(tb_outer)
+            except Exception:
+                pass
+            if progress_queue:
+                progress_queue.put(("error", f"Pipeline crashed: {e_pipeline}. See {err_path_outer} for details."))
+            return
+
+    # Start the pipeline in a background thread and schedule the queue processor
+    pipeline_thread = threading.Thread(target=lambda: pipeline_logic(progress_queue, cancel_event), daemon=True)
     monitor.start_timer()
+    pipeline_thread.start()
     progress_root.after(100, process_queue)
-    progress_root.mainloop()
-    
-    pipeline_thread.join()
-    pipeline_thread.join()
+    # Start the Tk mainloop (blocks until UI closed)
+    try:
+        progress_root.mainloop()
+    finally:
+        # Restore stdout regardless of how the GUI exits
+        sys.stdout = original_stdout
 
-    # Restore stdout
-    sys.stdout = original_stdout
-
+    # =========================
+# LAUNCHER (must be last)
+# =========================
 if __name__ == "__main__":
-    main()
-
-print("--- Script execution finished ---")
+    print("[launcher] entering __main__ block...", flush=True)
+    try:
+        main()
+        print("[launcher] main() returned normally.", flush=True)
+    except Exception:
+        import traceback
+        print("FATAL ERROR in main():", flush=True)
+        print(traceback.format_exc(), flush=True)
