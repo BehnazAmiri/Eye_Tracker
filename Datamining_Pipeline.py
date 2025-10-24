@@ -653,6 +653,8 @@ def clean_and_prepare_data(df, invalid_gaze_threshold, consecutive_zero_threshol
 
     # Filter out questions with very short interaction time
     time_df = time_df[time_df['t_ij'] > 1.0] # Minimum 1 second interaction
+    if time_df['t_ij'].max() > 300:
+      print("⚠️ Warning: Some t_ij values exceed 300s — check timestamp units (FPOGS should be seconds).")
 
     # Save overall valid pair counts for logging
     total_pairs = time_df.shape[0]
@@ -1607,7 +1609,8 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
 
     html_content.append("        <h2 class=\"mt-5\">Stage 1 — Data Cleaning and Interaction Time (t_ij) Computation</h2>")
     html_content.append("        <p><strong>Objective:</strong> This initial stage focuses on refining raw eye-tracking data by removing erroneous gaze samples and calculating the total interaction time for each participant-question pair.</p>")
-    html_content.append("        <h3 class=\"mt-4\">Methodology:</h3>")
+    html_content.append("<li>Invalid samples are removed only when the validity flag (BPOGV) is 0 <b>and</b> when long consecutive zero sequences in gaze coordinates (BPOGX, BPOGY) occur. "
+            "Isolated single zeros are tolerated and not removed. This reflects the new AND logic with consecutive-zero detection.</li>")
     html_content.append("        <ul>")
     html_content.append("            <li><strong>Invalid Gaze Sample Removal:</strong> Gaze samples are considered invalid and subsequently removed if their `BPOGV` (Binocular Point of Gaze Validity) value is not equal to 1, or if their gaze coordinates (`BPOGX`, `BPOGY`) are precisely (0,0). These conditions typically indicate data loss or tracking errors.</li>")
     html_content.append("            <li><strong>Interaction Time (t_ij) Computation:</strong> For each unique combination of participant, question, and exam part, the total interaction duration, denoted as <strong>t_ij</strong>, is calculated. This metric represents the cumulative time a participant spent viewing a specific question. Following this, interactions shorter than 1 second are removed, as they are considered too brief to represent meaningful engagement.</li>")
