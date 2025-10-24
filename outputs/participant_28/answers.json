@@ -1,0 +1,107 @@
+[
+    {
+        "section": "Part 1",
+        "question_number": 1,
+        "question_id": 8,
+        "chosen_option": "8-4-C",
+        "time_spent": 57.02
+    },
+    {
+        "section": "Part 1",
+        "question_number": 2,
+        "question_id": 3,
+        "chosen_option": "3-4-C",
+        "time_spent": 46.08
+    },
+    {
+        "section": "Part 1",
+        "question_number": 3,
+        "question_id": 9,
+        "chosen_option": "9-3",
+        "time_spent": 100.47
+    },
+    {
+        "section": "Part 1",
+        "question_number": 4,
+        "question_id": 2,
+        "chosen_option": "2-2-C",
+        "time_spent": 18.49
+    },
+    {
+        "section": "Part 1",
+        "question_number": 5,
+        "question_id": 7,
+        "chosen_option": "7-4-C",
+        "time_spent": 95.95
+    },
+    {
+        "section": "Part 2",
+        "question_number": 6,
+        "question_id": 15,
+        "chosen_option": "15-2",
+        "time_spent": 83.79
+    },
+    {
+        "section": "Part 2",
+        "question_number": 7,
+        "question_id": 4,
+        "chosen_option": "4-1-C",
+        "time_spent": 30.7
+    },
+    {
+        "section": "Part 2",
+        "question_number": 8,
+        "question_id": 14,
+        "chosen_option": "14-1-C",
+        "time_spent": 48.67
+    },
+    {
+        "section": "Part 2",
+        "question_number": 9,
+        "question_id": 10,
+        "chosen_option": "10-1",
+        "time_spent": 64.18
+    },
+    {
+        "section": "Part 2",
+        "question_number": 10,
+        "question_id": 11,
+        "chosen_option": "11-1",
+        "time_spent": 83.5
+    },
+    {
+        "section": "Part 2",
+        "question_number": 11,
+        "question_id": 6,
+        "chosen_option": "6-1",
+        "time_spent": 71.22
+    },
+    {
+        "section": "Part 2",
+        "question_number": 12,
+        "question_id": 5,
+        "chosen_option": "5-2",
+        "time_spent": 33.73
+    },
+    {
+        "section": "Part 2",
+        "question_number": 13,
+        "question_id": 13,
+        "chosen_option": "13-3",
+        "time_spent": 84.17
+    },
+    {
+        "section": "Part 2",
+        "question_number": 14,
+        "question_id": 12,
+        "chosen_option": "12-3",
+        "time_spent": 86.83
+    },
+    {
+        "section": "Part 2",
+        "question_number": 15,
+        "question_id": 1,
+        "chosen_option": "1-4",
+        "time_spent": 38.51
+    }
+]
