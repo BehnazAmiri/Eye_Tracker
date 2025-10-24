@@ -1512,6 +1512,13 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     """
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
 
+    # Calculate stats for chart
+    mean_val, median_val, std_val = 0, 0, 0
+    if 't_ij' in final_df.columns:
+        mean_val = final_df['t_ij'].mean()
+        median_val = final_df['t_ij'].median()
+        std_val = final_df['t_ij'].std()
+
     # Label distribution
     label_counts = labeled_df['label'].value_counts(dropna=False).rename_axis('label').reset_index(name='count')
 
@@ -1527,6 +1534,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">")
     html_content.append("    <title>Data Mining Pipeline Report</title>")
     html_content.append("    <link rel=\"stylesheet\" href=\"https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css\">")
+    html_content.append("    <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>")
     html_content.append("    <style>")
     html_content.append("        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; background-color: #f4f4f4; color: #333; }")
     html_content.append("        .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }")
@@ -1616,7 +1624,8 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("            <li><strong>Interaction Time (t_ij) Computation:</strong> For each unique combination of participant, question, and exam part, the total interaction duration, denoted as <strong>t_ij</strong>, is calculated. This metric represents the cumulative time a participant spent viewing a specific question. Following this, interactions shorter than 1 second are removed, as they are considered too brief to represent meaningful engagement.</li>")
     html_content.append("        </ul>")
     if 't_ij' in final_df.columns:
-        html_content.append(f"        <p><strong>Summary Statistics for t_ij:</strong> Mean = {final_df['t_ij'].mean():.2f}s, Median = {final_df['t_ij'].median():.2f}s, Standard Deviation = {final_df['t_ij'].std():.2f}s</p>")
+        html_content.append(f"        <p><strong>Summary Statistics for t_ij:</strong> Mean = {mean_val:.2f}s, Median = {median_val:.2f}s, Standard Deviation = {std_val:.2f}s</p>")
+        html_content.append("        <div style=\"width: 60%; margin: 20px auto;\"><canvas id=\"tijSummaryChart\"></canvas></div>")
     html_content.append("        <div class=\"section-divider\"></div>")
 
     html_content.append("        <h2 class=\"mt-5\">Stage 2 — Fast Outlier Detection (Lower Bound - LB)</h2>")
@@ -1952,14 +1961,15 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        }")
     html_content.append("")
     html_content.append("        // Close the modal when clicking outside the image")
-    html_content.append("        modal.onclick = function(event) {")
+    html_content.append("        window.onclick = function(event) {")
     html_content.append("            if (event.target == modal) {")
     html_content.append("                modal.style.display = \"none\";")
     html_content.append("            }")
     html_content.append("        }")
-    html_content.append("    </script>")
+    html_content.append("</script>")
     html_content.append("</html>")
 
+    # Write the assembled HTML content to the output report file
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write("\n".join(html_content))
 
