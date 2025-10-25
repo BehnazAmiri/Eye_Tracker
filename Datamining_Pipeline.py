@@ -37,7 +37,6 @@ except ImportError:
     print("\n   pip install matplotlib seaborn\n")
     print("="*60)
     exit()
-# ✅ Force working directory to the script's folder (fix VSCode Run path issues)
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.getcwd())
 print(f"Working directory fixed to: {os.getcwd()}")
@@ -45,7 +44,7 @@ import subprocess
 
 
 # ======================================================================================
-# >>> ADDED: LOGGING & UI HELPERS
+# LOGGING & UI HELPERS
 # ======================================================================================
 class Logger:
     def __init__(self, progress_queue, original_stdout):
@@ -159,7 +158,6 @@ def load_config(config_path='config.ini'):
 
 def load_all_participant_data(output_dir, participant_ids=None, question_ids=None, usecols=None, dtypes=None):
     """Loads and concatenates participant CSVs with optional filtering and lean dtypes."""
-    # اگر participant_ids داده شد، فقط همان پوشه‌ها را چک کن؛ وگرنه همه
     if participant_ids:
         candidate_dirs = [os.path.join(output_dir, pid) for pid in participant_ids]
     else:
@@ -171,7 +169,6 @@ def load_all_participant_data(output_dir, participant_ids=None, question_ids=Non
             continue
         files = glob.glob(os.path.join(pdir, 'Q*.csv'))
         if question_ids:
-            # فقط Qهایی که انتخاب شدند
             files = [f for f in files if os.path.basename(f).replace('.csv','') in question_ids]
         all_files.extend(files)
 
@@ -185,11 +182,10 @@ def load_all_participant_data(output_dir, participant_ids=None, question_ids=Non
             participant_id = os.path.basename(os.path.dirname(file))
             question_id    = os.path.basename(file).replace('.csv', '')
 
-            # فقط ستون‌های لازم با dtype کم‌حجم
             df = pd.read_csv(
                 file,
-                usecols=usecols,          # مثل ['BPOGX','BPOGY','FPOGS','BPOGV']
-                dtype=dtypes,             # مثل float32/int8
+                usecols=usecols,
+                dtype=dtypes,
                 low_memory=False,
                 memory_map=True,
                 on_bad_lines='warn'
@@ -206,7 +202,6 @@ def load_all_participant_data(output_dir, participant_ids=None, question_ids=Non
     df = pd.concat(df_list, ignore_index=True)
     del df_list
 
-    # شناسه‌ها را category کن تا RAM کم‌تر شود
     for c in ['participant_id', 'question_id']:
         if c in df.columns:
             df[c] = df[c].astype('category')
@@ -222,17 +217,14 @@ def load_question_data(questions_path, output_dir):
         correct_answers = {}
         for q in questions:
             question_id_str = f"Q{q['id']}"
-            # Determine correct option by checking option id suffix '-C' or last component == 'C'
             for idx, option in enumerate(q.get('options', []), start=1):
                 opt_id = option.get('id', '')
                 parts = opt_id.split('-')
                 if parts and parts[-1] == 'C':
-                    # Map numeric index to letter (1->A, 2->B, ...)
                     letter = chr(ord('A') + idx - 1) if idx <= 4 else None
                     if letter:
                         correct_answers[question_id_str] = letter
                     else:
-                        # fallback: keep original id if we cannot map
                         correct_answers[question_id_str] = opt_id
                     break
     
@@ -243,13 +235,10 @@ def load_question_data(questions_path, output_dir):
             participant_id = os.path.basename(os.path.dirname(file))
             with open(file, 'r', encoding='utf-8') as f:
                 participant_answers = json.load(f)
-                # It's a list of objects, not a dictionary
                 for answer in participant_answers:
-                    # The question_id in answers.json is an integer
                     question_id_key = f"Q{answer['question_id']}"
                     chosen_option = answer.get('chosen_option')
 
-                    # Derive chosen letter from chosen_option if possible (format: Q-<idx>[-C])
                     chosen_letter = None
                     if isinstance(chosen_option, str):
                         parts = chosen_option.split('-')
@@ -260,13 +249,11 @@ def load_question_data(questions_path, output_dir):
                             except Exception:
                                 chosen_letter = None
 
-                    # Determine correctness: prefer comparing letters (new mapping), otherwise fallback to id equality
                     correct_val = correct_answers.get(question_id_key)
                     is_correct = 0
                     if chosen_letter and isinstance(correct_val, str) and len(correct_val) == 1 and correct_val.isalpha():
                         is_correct = 1 if chosen_letter.upper() == correct_val.upper() else 0
                     else:
-                        # Fallback: compare raw chosen_option id to stored correct id (legacy)
                         is_correct = 1 if chosen_option == correct_val else 0
 
                     answers_list.append({
@@ -419,7 +406,6 @@ def get_input_range():
     root.title("Input for Analysis")
     root.geometry("340x480")
 
-    # ⬇️ همیشه بیار جلو و فوکوس بده
     root.lift()
     root.attributes("-topmost", True)
     root.after(200, lambda: root.attributes("-topmost", False))
@@ -511,14 +497,12 @@ def get_input_range():
         for k in plot_vars:
             plot_vars[k].set(prev_plots[k])
 
-    # افزودن دکمه حذف خروجی‌ها
     def delete_outputs():
         import shutil
         import tkinter.messagebox as messagebox
         
-        # Confirmation dialog
         if not messagebox.askyesno("Confirm Deletion", "Are you sure you want to delete all output files and folders? This action cannot be undone."):
-            return # User cancelled deletion
+            return
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
         targets = [
@@ -556,7 +540,7 @@ def get_input_range():
     return ranges.get('participants'), ranges.get('questions'), selected_plots, plot_vars["save_stage_outputs"].get()
 
 # ======================================================================================
-# >>> ADDED: UTILITIES & CONFIG HELPERS
+# UTILITIES & CONFIG HELPERS
 # ======================================================================================
 
 def _parse_bool(s):
@@ -1023,7 +1007,7 @@ def stream_clean_all(
     )
 
 # ======================================================================================
-# >>> ADDED: TIME CAP SUPPORT (NO-TIMELIMIT/TIMELIMIT)
+# TIME CAP SUPPORT
 # ======================================================================================
 
 def _apply_time_cap(df, time_cap_s):
@@ -1772,13 +1756,6 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
 
             row = {'participant_id': pid, 'question_id': qid}
             row['Question'] = prow.get('Question', 0.0)
-            
-            # Add all individual choice columns
-            for letter in ['A', 'B', 'C', 'D']:
-                choice_col = f'Choice_{letter}'
-                row[choice_col] = prow.get(choice_col, 0.0)
-            
-            # Also track correct answer and incorrect sum for backward compatibility
             if correct_letter:
                 correct_col = f'Choice_{correct_letter}'
                 row['Correct_Answer'] = prow.get(correct_col, 0.0)
@@ -1787,15 +1764,15 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
                     if letter != correct_letter:
                         choice_col = f'Choice_{letter}'
                         other_sum += prow.get(choice_col, 0.0)
-                row['Incorrect_Answers'] = other_sum
+                row['Other_Answers'] = other_sum
             else:
-                print(f"Warning: Correct answer not found for participant {pid}, question {qid}. Summing all choices into 'Incorrect_Answers'.")
+                print(f"Warning: Correct answer not found for participant {pid}, question {qid}. Summing all choices into 'Other_Answers'.")
                 row['Correct_Answer'] = 0.0
                 other_sum = 0.0
                 for letter in ['A', 'B', 'C', 'D']:
                     choice_col = f'Choice_{letter}'
                     other_sum += prow.get(choice_col, 0.0)
-                row['Incorrect_Answers'] = other_sum
+                row['Other_Answers'] = other_sum
             per_trial_rows.append(row)
 
         if not per_trial_rows:
@@ -1804,9 +1781,8 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
 
         per_trial_df = pd.DataFrame(per_trial_rows)
 
-        # Average across participants for each question - include all AOI columns
-        agg_cols = ['Question', 'Choice_A', 'Choice_B', 'Choice_C', 'Choice_D', 'Correct_Answer', 'Incorrect_Answers']
-        avg_times = per_trial_df.groupby('question_id')[[col for col in agg_cols if col in per_trial_df.columns]].mean().reset_index()
+        # Average across participants for each question
+        avg_times = per_trial_df.groupby('question_id')[['Question', 'Correct_Answer', 'Other_Answers']].mean().reset_index()
         
         # Sort by numeric question ID
         try:
@@ -1819,16 +1795,13 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         if cancel_event and cancel_event.is_set(): return
         progress_queue.put(("stage_progress", (50, "Creating AOI summary visualization...")))
 
-        # Seconds + percents tables - now with all choices
+        # Seconds + percents tables
         avg_times = avg_times.set_index('question_id')
-        
-        # Use columns: Question, Choice_A, Choice_B, Choice_C, Choice_D, Correct_Answer, Incorrect_Answers
-        display_cols = ['Question', 'Choice_A', 'Choice_B', 'Choice_C', 'Choice_D', 'Correct_Answer', 'Incorrect_Answers']
-        for c in display_cols:
+        for c in ['Question', 'Correct_Answer', 'Other_Answers']:
             if c not in avg_times.columns:
                 avg_times[c] = 0.0
 
-        pivot_df = avg_times[display_cols].copy()
+        pivot_df = avg_times[['Question', 'Correct_Answer', 'Other_Answers']].copy()
         row_sums = pivot_df.sum(axis=1)
         percent_df = pivot_df.div(row_sums.replace({0: np.nan}), axis=0).fillna(0.0) * 100
 
@@ -1843,46 +1816,26 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
             pivot_df.sort_index(inplace=True)
             percent_df = percent_df.loc[pivot_df.index]
 
-        # Multi-line xlabels with seconds+percent for all categories
+        # Multi-line xlabels with seconds+percent
         try:
             summary_labels = []
             for q in pivot_df.index:
                 secs_q = float(pivot_df.at[q, 'Question'])
-                secs_a = float(pivot_df.at[q, 'Choice_A'])
-                secs_b = float(pivot_df.at[q, 'Choice_B'])
-                secs_c = float(pivot_df.at[q, 'Choice_C'])
-                secs_d = float(pivot_df.at[q, 'Choice_D'])
-                secs_correct = float(pivot_df.at[q, 'Correct_Answer'])
-                secs_incorrect = float(pivot_df.at[q, 'Incorrect_Answers'])
-                
+                secs_c = float(pivot_df.at[q, 'Correct_Answer'])
+                secs_o = float(pivot_df.at[q, 'Other_Answers'])
                 pct_q = float(percent_df.at[q, 'Question'])
-                pct_a = float(percent_df.at[q, 'Choice_A'])
-                pct_b = float(percent_df.at[q, 'Choice_B'])
-                pct_c = float(percent_df.at[q, 'Choice_C'])
-                pct_d = float(percent_df.at[q, 'Choice_D'])
-                pct_correct = float(percent_df.at[q, 'Correct_Answer'])
-                pct_incorrect = float(percent_df.at[q, 'Incorrect_Answers'])
-                
+                pct_c = float(percent_df.at[q, 'Correct_Answer'])
+                pct_o = float(percent_df.at[q, 'Other_Answers'])
                 lbl = (f"{q}\n"
                        f"Q: {pct_q:.1f}% ({secs_q:.1f}s)\n"
-                       f"A: {pct_a:.1f}% ({secs_a:.1f}s) B: {pct_b:.1f}% ({secs_b:.1f}s)\n"
-                       f"C: {pct_c:.1f}% ({secs_c:.1f}s) D: {pct_d:.1f}% ({secs_d:.1f}s)\n"
-                       f"Correct: {pct_correct:.1f}% ({secs_correct:.1f}s)\n"
-                       f"Incorrect: {pct_incorrect:.1f}% ({secs_incorrect:.1f}s)")
+                       f"C: {pct_c:.1f}% ({secs_c:.1f}s)\n"
+                       f"O: {pct_o:.1f}% ({secs_o:.1f}s)")
                 summary_labels.append(lbl)
         except Exception:
             summary_labels = list(pivot_df.index.astype(str))
 
-        colors = {
-            'Question': 'skyblue', 
-            'Choice_A': '#ff9999', 
-            'Choice_B': '#ffcc99', 
-            'Choice_C': '#ffff99', 
-            'Choice_D': '#99ccff',
-            'Correct_Answer': 'mediumseagreen', 
-            'Incorrect_Answers': 'lightcoral'
-        }
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20, 16), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
+        colors = {'Question': 'skyblue', 'Correct_Answer': 'mediumseagreen', 'Other_Answers': 'lightcoral'}
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(18, 14), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
 
         pivot_df.plot(kind='bar', stacked=True, ax=ax1, color=[colors.get(c) for c in pivot_df.columns])
         ax1.set_title('Average Time Spent on AOIs per Question (Stacked seconds)')
@@ -1937,19 +1890,16 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         try:
             summary_df = pivot_df.copy()
             # Add percentage columns
-            for col in display_cols:
-                summary_df[f'{col}_pct'] = percent_df[col]
+            summary_df['Question_pct'] = percent_df['Question']
+            summary_df['Correct_Answer_pct'] = percent_df['Correct_Answer']
+            summary_df['Other_Answers_pct'] = percent_df['Other_Answers']
             
             csv_path = os.path.join(viz_dir, 'avg_aoi_per_question.csv')
             summary_df.reset_index().rename(columns={
                 'question_id': 'question_id',
                 'Question': 'Question_s',
-                'Choice_A': 'Choice_A_s',
-                'Choice_B': 'Choice_B_s',
-                'Choice_C': 'Choice_C_s',
-                'Choice_D': 'Choice_D_s',
                 'Correct_Answer': 'Correct_Answer_s',
-                'Incorrect_Answers': 'Incorrect_Answers_s'
+                'Other_Answers': 'Other_Answers_s'
             }).to_csv(csv_path, index=False, float_format='%.3f')
             print(f"Saved AOI per-question summary CSV to {csv_path}")
         except Exception as e:
@@ -1963,7 +1913,10 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         plt.close()
 
 
-def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue, cancel_event=None):
+def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue, cancel_event=None, correct_answers=None):
+    """
+    Generates AOI time per question bar chart with individual choices + aggregated correct/incorrect.
+    """
     print("Generating AOI time per question bar charts...")
     if 'aoi_cols' not in df.columns and not any(col.startswith('Choice_') for col in df.columns):
         print("Warning: No AOI columns found for 'AOI Time per Question' visualization.")
@@ -1978,7 +1931,78 @@ def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue,
     try:
         progress_queue.put(("stage_progress", (20, "Calculating average AOI time per question...")))
         if cancel_event and cancel_event.is_set(): return
-        aoi_avg_time_q = df.groupby('question_id')[aoi_cols].mean().reset_index()
+        
+        # Build per-participant correct-letter mapping
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        qexam_dir = os.path.join(script_dir, 'question_exams')
+        participant_map = {}
+        if os.path.exists(qexam_dir):
+            for fname in os.listdir(qexam_dir):
+                if not fname.lower().endswith('.json'):
+                    continue
+                try:
+                    base = os.path.splitext(fname)[0]
+                    num = base.split('_')[-1]
+                    participant_id = f'participant_{num}'
+                    fpath = os.path.join(qexam_dir, fname)
+                    with open(fpath, 'r', encoding='utf-8') as jf:
+                        qdata = json.load(jf)
+                        mapping = {}
+                        for part in ('Part1', 'Part2'):
+                            for item in qdata.get(part, []):
+                                qid = item.get('question_id')
+                                opts = item.get('options', [])
+                                for idx, opt in enumerate(opts):
+                                    oid = opt.get('id', '')
+                                    if isinstance(oid, str) and oid.endswith('-C'):
+                                        letter = chr(ord('A') + idx)
+                                        mapping[f'Q{qid}'] = letter
+                                        break
+                        if mapping:
+                            participant_map[participant_id] = mapping
+                except Exception as e:
+                    print(f"Warning: Could not process exam file {fname}: {e}")
+        
+        # Calculate per-trial AOI times
+        per_trial = df[['participant_id', 'question_id'] + aoi_cols].groupby(['participant_id', 'question_id']).mean().reset_index()
+        
+        # Build aggregated data with Correct_Answer and Incorrect_Answers
+        agg_data = []
+        for _, row in per_trial.iterrows():
+            pid = row['participant_id']
+            qid = row['question_id']
+            correct_letter = participant_map.get(pid, {}).get(qid)
+            
+            row_data = {'question_id': qid}
+            # Add individual AOI columns
+            for col in aoi_cols:
+                row_data[col] = row.get(col, 0.0)
+            
+            # Add aggregated Correct/Incorrect
+            if correct_letter:
+                correct_col = f'Choice_{correct_letter}'
+                row_data['Correct_Answer'] = row.get(correct_col, 0.0)
+                incorrect_sum = 0.0
+                for letter in ['A', 'B', 'C', 'D']:
+                    if letter != correct_letter:
+                        choice_col = f'Choice_{letter}'
+                        incorrect_sum += row.get(choice_col, 0.0)
+                row_data['Incorrect_Answers'] = incorrect_sum
+            else:
+                row_data['Correct_Answer'] = 0.0
+                incorrect_sum = 0.0
+                for letter in ['A', 'B', 'C', 'D']:
+                    choice_col = f'Choice_{letter}'
+                    incorrect_sum += row.get(choice_col, 0.0)
+                row_data['Incorrect_Answers'] = incorrect_sum
+            
+            agg_data.append(row_data)
+        
+        agg_df = pd.DataFrame(agg_data)
+        
+        # Average across participants for each question
+        all_cols = aoi_cols + ['Correct_Answer', 'Incorrect_Answers']
+        aoi_avg_time_q = agg_df.groupby('question_id')[[col for col in all_cols if col in agg_df.columns]].mean().reset_index()
         
         # Sort by numeric question ID
         try:
@@ -1993,9 +2017,9 @@ def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue,
         progress_queue.put(("stage_progress", (50, "Creating visualization...")))
         if cancel_event and cancel_event.is_set(): return
 
-        plt.figure(figsize=(15, 8))
-        sns.barplot(data=aoi_avg_time_q_melted, x='question_id', y='Average Duration (s)', hue='AOI', palette='viridis')
-        plt.title('Average Time Spent in Each AOI per Question')
+        plt.figure(figsize=(16, 8))
+        sns.barplot(data=aoi_avg_time_q_melted, x='question_id', y='Average Duration (s)', hue='AOI', palette='tab10')
+        plt.title('Average Time Spent in Each AOI per Question (Including Correct/Incorrect Aggregates)')
         plt.xlabel('Question ID')
         plt.ylabel('Average Duration (s)')
         plt.xticks(rotation=45, ha='right')
@@ -2003,9 +2027,13 @@ def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue,
         plt.tight_layout()
 
         aoi_q_path = os.path.join(viz_dir, 'aoi_time_per_question.png')
-        plt.savefig(aoi_q_path)
+        plt.savefig(aoi_q_path, dpi=150)
         print(f"Saved AOI time per question bar chart to {aoi_q_path}")
         progress_queue.put(("stage_progress", (100, "AOI time per question chart generated.")))
+    except Exception as e:
+        print(f"Error generating AOI time per question chart: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         plt.close()
         print("--- AOI time per question chart generation finished ---")
@@ -2284,7 +2312,7 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
 
             # Cumulative time (seconds) - STACKED bar chart
             try:
-                fig, ax = plt.subplots(figsize=(14, 8))
+                fig, ax = plt.subplots(figsize=(14, 9))
                 ind = np.arange(len(questions))
                 
                 # Create stacked bars
@@ -2300,10 +2328,10 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
                 ax.legend(loc='upper right')
                 ax.grid(axis='y', alpha=0.3)
                 
-                # Annotate: seconds ON bars, percentages BELOW x-axis
+                # Get y-axis limits before adding annotations
                 max_total = stack_totals.max() if len(stack_totals) > 0 else 1.0
-                y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
                 
+                # Annotate: seconds ON bars
                 for i_bar in range(len(ind)):
                     q_val = question_times[i_bar]
                     c_val = correct_times[i_bar]
@@ -2325,22 +2353,29 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
                         ax.text(i_bar, q_val + c_val + i_val/2, f'{int(round(i_val))}s', 
                                ha='center', va='center', fontsize=9, 
                                color='white', fontweight='bold')
+                
+                # Percentages BELOW the plot area (use figure coordinates)
+                # Add them as separate text below x-axis, with enough space
+                for i_bar in range(len(ind)):
+                    q_val = question_times[i_bar]
+                    c_val = correct_times[i_bar]
+                    i_val = incorrect_times[i_bar]
+                    total_h = stack_totals[i_bar]
                     
-                    # Percentages below x-axis labels (further down to avoid overlap)
                     if total_h > 0:
                         q_pct = (q_val / total_h * 100)
                         c_pct = (c_val / total_h * 100)
                         i_pct = (i_val / total_h * 100)
-                        pct_text = f'Q:{q_pct:.0f}% C:{c_pct:.0f}% I:{i_pct:.0f}%'
-                        # Position below the x-axis at a fixed offset
-                        ax.text(i_bar, ax.get_ylim()[0] - 0.08 * y_range, pct_text, 
-                               ha='center', va='top', fontsize=7, color='black')
+                        pct_text = f'Q:{q_pct:.0f}%\nC:{c_pct:.0f}%\nI:{i_pct:.0f}%'
+                        # Use figure coordinates to place text below x-axis
+                        fig.text((i_bar + 0.5) / len(ind), 0.08, pct_text, 
+                               ha='center', va='top', fontsize=7, color='black',
+                               transform=fig.transFigure)
                 
                 # Extend bottom margin to accommodate percentage text
-                plt.subplots_adjust(bottom=0.15)
-                plt.tight_layout()
+                plt.subplots_adjust(bottom=0.2, top=0.95)
                 sec_path = os.path.join(p_dir, 'cumulative_time_seconds.png')
-                fig.savefig(sec_path, dpi=150, bbox_inches='tight')
+                fig.savefig(sec_path, dpi=150)
                 plt.close(fig)
             except Exception as e:
                 print(f"Could not create seconds stacked bar chart for {pid}: {e}")
@@ -2349,7 +2384,7 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
 
             # Percent bar chart - STACKED
             try:
-                fig, ax = plt.subplots(figsize=(14, 8))
+                fig, ax = plt.subplots(figsize=(14, 9))
                 ind = np.arange(len(questions))
                 
                 # Calculate percentages for stacked display
@@ -2393,10 +2428,9 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
                         ax.text(i_bar, q_val + c_val + i_val/2, f'{i_val:.0f}%', 
                                ha='center', va='center', color='white', fontsize=9, fontweight='bold')
                 
-                plt.subplots_adjust(bottom=0.12)
-                plt.tight_layout()
+                plt.subplots_adjust(bottom=0.15, top=0.95)
                 pct_path = os.path.join(p_dir, 'cumulative_time_percent.png')
-                fig.savefig(pct_path, dpi=150, bbox_inches='tight')
+                fig.savefig(pct_path, dpi=150)
                 plt.close(fig)
             except Exception as e:
                 print(f"Could not create percent stacked bar chart for {pid}: {e}")
@@ -2857,6 +2891,16 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     """
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
 
+    # Build absolute folder paths for CSV file locations
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_folders = {
+        'gaze_validity': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data')),
+        'stage2_outlier': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data')),
+        'stage3_labeled': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data')),
+        'stage3_correct': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data')),
+        'avg_aoi': os.path.abspath(os.path.join(script_dir, 'visualizations'))
+    }
+
     # Calculate stats for chart
     mean_val, median_val, std_val = 0, 0, 0
     if 't_ij' in final_df.columns:
@@ -2925,6 +2969,9 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("            max-width: 1400px;")
     html_content.append("            border: 3px solid #667eea;")
     html_content.append("            border-radius: 8px;")
+    html_content.append("            cursor: zoom-in;")
+    html_content.append("            transition: transform 0.2s ease-out;")
+    html_content.append("            transform-origin: center center;")
     html_content.append("        }")
     html_content.append("        .modal-content, #caption {")
     html_content.append("            animation-name: zoom;")
@@ -2987,9 +3034,9 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
 
     html_content.append("        <h2 class=\"mt-5\">Stage 1 — Data Cleaning and Interaction Time (t_ij) Computation</h2>")
     html_content.append("        <p><strong>Objective:</strong> This initial stage focuses on refining raw eye-tracking data by removing erroneous gaze samples and calculating the total interaction time for each participant-question pair.</p>")
-    html_content.append("        <p>The primary cleaning operation involves filtering out entire trials (participant-question pairs) where the ratio of invalid gaze samples exceeds a predefined threshold. Invalid gaze samples are identified by the `BPOGV` flag (where a value other than 1 indicates invalidity) and by sequences of zero-coordinates, which often signify tracker data loss. This ensures that the subsequent analysis is based on high-quality interaction data.</p>")
+    html_content.append("        <p>The primary cleaning operation involves filtering out entire trials (participant-question pairs) where the ratio of invalid gaze samples exceeds a predefined threshold. Invalid gaze samples are identified by the BPOGV flag (where a value other than 1 indicates invalidity) and by sequences of zero-coordinates, which often signify tracker data loss. This ensures that the subsequent analysis is based on high-quality interaction data.</p>")
     html_content.append("        <ul>")
-    html_content.append("            <li><strong>Invalid Gaze Sample Removal:</strong> Gaze samples are considered invalid and subsequently removed if their `BPOGV` (Binocular Point of Gaze Validity) value is not equal to 1, or if their gaze coordinates (`BPOGX`, `BPOGY`) are precisely (0,0). These conditions typically indicate data loss or tracking errors.</li>")
+    html_content.append("            <li><strong>Invalid Gaze Sample Removal:</strong> Gaze samples are considered invalid and subsequently removed if their BPOGV (Binocular Point of Gaze Validity) value is not equal to 1, or if their gaze coordinates (BPOGX, BPOGY) are precisely (0,0). These conditions typically indicate data loss or tracking errors.</li>")
     html_content.append("            <li><strong>Interaction Time (t_ij) Computation:</strong> For each unique combination of participant, question, and exam part, the total interaction duration, denoted as <strong>t_ij</strong>, is calculated. This metric represents the cumulative time a participant spent viewing a specific question. Following this, interactions shorter than 1 second are removed, as they are considered too brief to represent meaningful engagement.</li>")
     html_content.append("        </ul>")
     if 't_ij' in final_df.columns:
@@ -3000,8 +3047,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
             if gaze_validity_stats is not None and not gaze_validity_stats.empty:
                 html_content.append("        <h4 class=\"mt-3\">Gaze Validity Statistics (sample)</h4>")
                 html_content.append("        <p>The table below shows the count and ratio of invalid gaze samples for each trial. Trials with an invalid ratio above the configured threshold are excluded from further analysis.</p>")
-                html_content.append("        <p>📊 <strong>Download Full Data:</strong> <a href='../intermediate_processed_data/gaze_validity_stats.csv' download>gaze_validity_stats.csv</a> — Complete gaze validity statistics for all trials</p>")
-                # Sort gaze validity stats by participant and question
+                html_content.append(f"        <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['gaze_validity'].replace(chr(92), '/')}' target='_blank'>intermediate_processed_data</a> — Contains gaze_validity_stats.csv and other intermediate files</p>")
                 gvs_sorted = gaze_validity_stats.copy()
                 if 'participant_id' in gvs_sorted.columns:
                     gvs_sorted['_pid_sort'] = gvs_sorted['participant_id'].apply(_extract_numeric_suffix)
@@ -3026,14 +3072,14 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        <p><strong>Objective:</strong> This stage identifies and flags unusually short interaction times (t_ij) that may represent superficial engagement or premature responses, using a statistical lower bound (LB) threshold.</p>")
     html_content.append("        <h3 class=\"mt-4\">Methodology:</h3>")
     html_content.append("        <ul>")
-    html_content.append("            <li><strong>Quartile and Interquartile Range (IQR) Computation:</strong> For each unique question and exam part, the first quartile (Q1), median, third quartile (Q3), and Interquartile Range (IQR = Q3 - Q1) of the `t_ij` values are calculated. These statistics provide a robust measure of the central tendency and spread of interaction times, minimizing the influence of extreme values.</li>")
+    html_content.append("            <li><strong>Quartile and Interquartile Range (IQR) Computation:</strong> For each unique question and exam part, the first quartile (Q1), median, third quartile (Q3), and Interquartile Range (IQR = Q3 - Q1) of the t_ij values are calculated. These statistics provide a robust measure of the central tendency and spread of interaction times, minimizing the influence of extreme values.</li>")
     html_content.append("            <li><strong>Lower Bound (LB) Calculation:</strong> The Lower Bound (LB) is computed as $Q1 - 1.5 \times IQR$. This formula is a standard method for identifying potential outliers in a dataset, where values falling below the LB are considered statistically anomalous.</li>")
-    html_content.append("            <li><strong>Time Validity Flagging:</strong> An interaction is flagged as <strong>`invalid_time`</strong> if its `t_ij` value is less than the calculated `LB` for that specific question and part. This identifies interactions that are significantly shorter than the typical engagement duration.</li>")
+    html_content.append("            <li><strong>Time Validity Flagging:</strong> An interaction is flagged as <strong>invalid_time</strong> if its t_ij value is less than the calculated LB for that specific question and part. This identifies interactions that are significantly shorter than the typical engagement duration.</li>")
     html_content.append("        </ul>")
     if not stats_all.empty:
         html_content.append("        <h3 class=\"mt-4\">Sample of Computed Thresholds (LB)</h3>")
         html_content.append("        <p>The table below shows a sample of the calculated Q1, Median, Q3, IQR, and LB values for different question-part combinations. These thresholds are crucial for identifying outliers in interaction times.</p>")
-        html_content.append("        <p>📊 <strong>Download Full Data:</strong> <a href='../intermediate_processed_data/stage2_outlier_stats.csv' download>stage2_outlier_stats.csv</a> — Complete threshold statistics for all questions</p>")
+        html_content.append(f"        <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['stage2_outlier'].replace(chr(92), '/')}' target='_blank'>intermediate_processed_data</a> — Contains stage2_outlier_stats.csv and other files</p>")
         html_content.append(f"        {_create_threshold_table_with_totals(stats_all, max_rows=20)}")
     html_content.append("        <div class=\"section-divider\"></div>")
 
@@ -3041,26 +3087,26 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        <p><strong>Objective:</strong> This stage assigns behavioral labels (Unusual Performance - UP, Normal Performance - NP, Invalid, or Not Applicable) to each participant's response based on their correctness and interaction time relative to a statistically derived upper fence.</p>")
     html_content.append("        <h3 class=\"mt-4\">Methodology:</h3>")
     html_content.append("        <ul>")
-    html_content.append("            <li><strong>Filtering for Valid Records:</strong> Labeling is performed exclusively on records deemed valid from Stage 2 (i.e., not flagged as `invalid_time`).</li>")
-    html_content.append("            <li><strong>Correct Answer Statistics (Q1_C, median_C, Q3_C, IQR_C):</strong> Similar to Stage 2, quartile and IQR values are computed, but specifically for `t_ij` values associated with <strong>only valid correct answers</strong> for each question and part. This creates a baseline for efficient, correct responses.</li>")
+    html_content.append("            <li><strong>Filtering for Valid Records:</strong> Labeling is performed exclusively on records deemed valid from Stage 2 (i.e., not flagged as invalid_time).</li>")
+    html_content.append("            <li><strong>Correct Answer Statistics (Q1_C, median_C, Q3_C, IQR_C):</strong> Similar to Stage 2, quartile and IQR values are computed, but specifically for t_ij values associated with <strong>only valid correct answers</strong> for each question and part. This creates a baseline for efficient, correct responses.</li>")
     html_content.append("            <li><strong>Upper Fence for Correct Answers (UF_C):</strong> The Upper Fence for Correct answers (UF_C) is calculated as $Q3_C + 1.5 \times IQR_C$. This threshold helps identify correct responses that took an unusually long time, potentially indicating a less efficient problem-solving process despite arriving at the correct answer.</li>")
     html_content.append("        </ul>")
     html_content.append("        <h3 class=\"mt-4\">Labeling Logic:</h3>")
     html_content.append("        <p>The following rules are applied sequentially to assign a behavioral label:</p>")
     html_content.append("        <ol>")
-    html_content.append("            <li>If `UF_C` cannot be computed (e.g., no valid correct answers for a given question/part), the label is set to <code>NA_no_correct</code> (Not Applicable - No Correct Answers).</li>")
+    html_content.append("            <li>If UF_C cannot be computed (e.g., no valid correct answers for a given question/part), the label is set to <code>NA_no_correct</code> (Not Applicable - No Correct Answers).</li>")
     html_content.append("            <li>If the participant's answer is <strong>incorrect</strong>, the label is set to <code>UP</code> (Unusual Performance).</li>")
-    html_content.append("            <li>If the participant's answer is <strong>correct</strong> but their `t_ij` is greater than `UF_C`, the label is also set to <code>UP</code> (Unusual Performance), indicating an unusually long time for a correct response.</li>")
-    html_content.append("            <li>In all other cases (correct answer and `t_ij` ≤ `UF_C`), the label is set to <code>NP</code> (Normal Performance).</li>")
+    html_content.append("            <li>If the participant's answer is <strong>correct</strong> but their t_ij is greater than UF_C, the label is also set to <code>UP</code> (Unusual Performance), indicating an unusually long time for a correct response.</li>")
+    html_content.append("            <li>In all other cases (correct answer and t_ij ≤ UF_C), the label is set to <code>NP</code> (Normal Performance).</li>")
     html_content.append("        </ol>")
     html_content.append("        <h3 class=\"mt-4\">Label Distribution</h3>")
     html_content.append("        <p>The distribution of assigned behavioral labels across all valid interactions is as follows:</p>")
-    html_content.append("        <p>📊 <strong>Download Full Data:</strong> <a href='../intermediate_processed_data/stage3_labeled_data.csv' download>stage3_labeled_data.csv</a> — Complete labeled dataset with all interactions</p>")
+    html_content.append(f"        <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['stage3_labeled'].replace(chr(92), '/')}' target='_blank'>intermediate_processed_data</a> — Contains stage3_labeled_data.csv and other files</p>")
     html_content.append(label_counts.to_html(index=False, classes='table table-striped table-bordered'))
     if not stats_c.empty:
         html_content.append("        <h3 class=\"mt-4\">Sample of Thresholds for Correct Answers (UF_C)</h3>")
         html_content.append("        <p>This table provides a sample of the calculated Q1_C, Median_C, Q3_C, IQR_C, and UF_C values, derived exclusively from correct responses. These thresholds are used to differentiate between normal and unusual performance among correct answers.</p>")
-        html_content.append("        <p>📊 <strong>Download Full Data:</strong> <a href='../intermediate_processed_data/stage3_correct_stats.csv' download>stage3_correct_stats.csv</a> — Complete statistics for correct answers</p>")
+        html_content.append(f"        <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['stage3_correct'].replace(chr(92), '/')}' target='_blank'>intermediate_processed_data</a> — Contains stage3_correct_stats.csv and other files</p>")
         html_content.append(f"        {_create_threshold_table_with_totals(stats_c, max_rows=20)}")
     html_content.append("        <div class=\"section-divider\"></div>")
 
@@ -3068,13 +3114,13 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        <p><strong>Objective:</strong> This final processing stage extracts granular features related to specific Areas of Interest (AOIs) on the screen and delineates distinct cognitive phases (Reading and Answering) within each interaction.</p>")
     html_content.append("        <h3 class=\"mt-4\">Methodology:</h3>")
     html_content.append("        <ul>")
-    html_content.append("            <li><strong>Cognitive Phase Duration Computation:</strong> The total interaction time (`t_ij`) is segmented into two primary cognitive phases: <strong>Reading Duration</strong> and <strong>Answering Duration</strong>. This segmentation is critical for understanding how participants allocate their attention during problem-solving.")
+    html_content.append("            <li><strong>Cognitive Phase Duration Computation:</strong> The total interaction time (t_ij) is segmented into two primary cognitive phases: <strong>Reading Duration</strong> and <strong>Answering Duration</strong>. This segmentation is critical for understanding how participants allocate their attention during problem-solving.")
     html_content.append("                <ul>")
-    html_content.append("                    <li><strong>Question→Choice Transition:</strong> The transition point from the Reading phase to the Answering phase is determined by identifying the first gaze sample that falls within any of the defined `Choice` AOIs after initially fixating on the `Question` AOI. If `BKID` (Button/Key ID) data is available, it is used to precisely mark the moment a participant interacts with an option.</li>")
-    html_content.append("                    <li><strong>Midpoint Fallback:</strong> In cases where AOI transition data or `BKID` is not available or ambiguous, a fallback mechanism is employed where the midpoint of the total `t_ij` is used to approximate the transition between reading and answering phases.</li>")
+    html_content.append("                    <li><strong>Question→Choice Transition:</strong> The transition point from the Reading phase to the Answering phase is determined by identifying the first gaze sample that falls within any of the defined Choice AOIs after initially fixating on the Question AOI. If BKID (Button/Key ID) data is available, it is used to precisely mark the moment a participant interacts with an option.</li>")
+    html_content.append("                    <li><strong>Midpoint Fallback:</strong> In cases where AOI transition data or BKID is not available or ambiguous, a fallback mechanism is employed where the midpoint of the total t_ij is used to approximate the transition between reading and answering phases.</li>")
     html_content.append("                </ul>")
     html_content.append("            </li>")
-    html_content.append("            <li><strong>AOI Time Aggregation:</strong> For each interaction, the cumulative gaze duration within predefined Areas of Interest (AOIs) is calculated. These AOIs typically include: `Question` (the question text area), `Choice_A`, `Choice_B`, `Choice_C`, `Choice_D` (individual answer options), `Timer` (the countdown timer area), and `Submit` (the submission button area). These aggregated times provide insights into attentional distribution.</li>")
+    html_content.append("            <li><strong>AOI Time Aggregation:</strong> For each interaction, the cumulative gaze duration within predefined Areas of Interest (AOIs) is calculated. These AOIs typically include: Question (the question text area), Choice_A, Choice_B, Choice_C, Choice_D (individual answer options), Timer (the countdown timer area), and Submit (the submission button area). These aggregated times provide insights into attentional distribution.</li>")
     html_content.append("        </ul>")
     cols_show = [c for c in ['participant_id','question_id','part','t_ij','label',
                              'Reading_duration_s','Answering_duration_s',
@@ -3106,32 +3152,28 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        <h2 class=\"mt-5\">Key Variables and Definitions</h2>")
     html_content.append("        <p>This section provides a glossary of key variables and terms used throughout the data mining pipeline and in this report, crucial for a thorough understanding of the analysis.</p>")
     html_content.append("        <ul>")
-    html_content.append("            <li><strong>`participant_id`</strong>: A unique identifier assigned to each study participant.</li>")
-    html_content.append("            <li><strong>`question_id`</strong>: A unique identifier for each question presented to participants.</li>")
-    html_content.append("            <li><strong>`part`</strong>: Denotes the section of the exam (e.g., 'Part 1', 'Part 2') to which a question belongs.</li>")
-    html_content.append("            <li><strong>`BPOGV` (Binocular Point of Gaze Validity)</strong>: A metric indicating the validity of the recorded gaze sample. A value of 1 typically signifies valid gaze data.</li>")
-    html_content.append("            <li><strong>`t_ij` (Interaction Time)</strong>: The total duration, in seconds, that participant `i` spent interacting with question `j`.</li>")
-    html_content.append("            <li><strong>`Q1`, `median`, `Q3`</strong>: The first quartile, median, and third quartile of `t_ij` values, respectively, calculated per question and part.</li>")
-    html_content.append("            <li><strong>`IQR` (Interquartile Range)</strong>: The difference between the third and first quartiles (`Q3 - Q1`), representing the spread of the middle 50% of `t_ij` values.</li>")
-    html_content.append("            <li><strong>`LB` (Lower Bound)</strong>: A statistical threshold calculated as $Q1 - 1.5 \times IQR$, used to identify unusually short interaction times (outliers).</li>")
-    html_content.append("            <li><strong>`invalid_time`</strong>: A flag indicating that an interaction's `t_ij` fell below the `LB`, suggesting an outlier.</li>")
-    html_content.append("            <li><strong>`is_correct`</strong>: A binary variable (1 or 0) indicating whether the participant's answer to a question was correct.</li>")
-    html_content.append("            <li><strong>`Q1_C`, `median_C`, `Q3_C`</strong>: The first quartile, median, and third quartile of `t_ij` values, calculated exclusively for <strong>correct answers</strong> per question and part.</li>")
-    html_content.append("            <li><strong>`IQR_C` (Interquartile Range for Correct Answers)</strong>: The `IQR` calculated specifically for `t_ij` values of correct answers.</li>")
-    html_content.append("            <li><strong>`UF_C` (Upper Fence for Correct Answers)</strong>: A statistical threshold calculated as $Q3_C + 1.5 \times IQR_C$, used to identify unusually long interaction times for correct answers.</li>")
-    html_content.append("            <li><strong>`label`</strong>: The behavioral label assigned to each interaction:")
+    html_content.append("            <li><strong>participant_id</strong>: A unique identifier assigned to each study participant.</li>")
+    html_content.append("            <li><strong>question_id</strong>: A unique identifier for each question presented to participants.</li>")
+    html_content.append("            <li><strong>part</strong>: Denotes the section of the exam (e.g., 'Part 1', 'Part 2') to which a question belongs.</li>")
+    html_content.append("            <li><strong>BPOGV (Binocular Point of Gaze Validity)</strong>: A metric indicating the validity of the recorded gaze sample. A value of 1 typically signifies valid gaze data.</li>")
+    html_content.append("            <li><strong>t_ij (Interaction Time)</strong>: The total duration, in seconds, that participant i spent interacting with question j.</li>")
+    html_content.append("            <li><strong>Q1, median, Q3</strong>: The first quartile, median, and third quartile of t_ij values, respectively, calculated per question and part.</li>")
+    html_content.append("            <li><strong>IQR (Interquartile Range)</strong>: The difference between the third and first quartiles (Q3 - Q1), representing the spread of the middle 50% of t_ij values.</li>")
+    html_content.append("            <li><strong>LB (Lower Bound)</strong>: A statistical threshold calculated as $Q1 - 1.5 \times IQR$, used to identify unusually short interaction times (outliers).</li>")
+    html_content.append("            <li><strong>invalid_time</strong>: A flag indicating that an interaction's t_ij fell below the LB, suggesting an outlier.</li>")
+    html_content.append("            <li><strong>is_correct</strong>: A binary variable (1 or 0) indicating whether the participant's answer to a question was correct.</li>")
+    html_content.append("            <li><strong>Q1_C, median_C, Q3_C</strong>: The first quartile, median, and third quartile of t_ij values, calculated exclusively for <strong>correct answers</strong> per question and part.</li>")
+    html_content.append("            <li><strong>IQR_C (Interquartile Range for Correct Answers)</strong>: The IQR calculated specifically for t_ij values of correct answers.</li>")
+    html_content.append("            <li><strong>UF_C (Upper Fence for Correct Answers)</strong>: A statistical threshold calculated as $Q3_C + 1.5 \times IQR_C$, used to identify unusually long interaction times for correct answers.</li>")
+    html_content.append("            <li><strong>label</strong>: The behavioral label assigned to each interaction:")
     html_content.append("                <ul>")
-    html_content.append("                    <li><code>NP</code> (Normal Performance): Correct answer with `t_ij` within expected range.</li>")
-    html_content.append("                    <li><code>UP</code> (Unusual Performance): Incorrect answer, or correct answer with `t_ij` exceeding `UF_C`.</li>")
-    html_content.append("                    <li><code>INVALID</code>: Interaction flagged due to `invalid_time` in Stage 2.</li>")
-    html_content.append("                    <li><code>NA_no_correct</code>: Not Applicable, due to insufficient correct answers to compute `UF_C`.</li>")
+    html_content.append("                    <li><code>NP</code> (Normal Performance): Correct answer with t_ij within expected range.</li>")
+    html_content.append("                    <li><code>UP</code> (Unusual Performance): Incorrect answer, or correct answer with t_ij exceeding UF_C.</li>")
+    html_content.append("                    <li><code>INVALID</code>: Interaction flagged due to invalid_time in Stage 2.</li>")
+    html_content.append("                    <li><code>NA_no_correct</code>: Not Applicable, due to insufficient correct answers to compute UF_C.</li>")
     html_content.append("                </ul>")
-    html_content.append("            <li><strong>`Reading_duration_s`</strong>: The estimated time, in seconds, a participant spent reading the question and options.</li>")
-    html_content.append("                    <li><code>INVALID</code>: Interaction flagged due to `invalid_time` in Stage 2.</li>")
-    html_content.append("                    <li><code>NA_no_correct</code>: Not Applicable, due to insufficient correct answers to compute `UF_C`.</li>")
-    html_content.append("                </ul>")
-    html_content.append("            <li><strong>`Reading_duration_s`</strong>: The estimated time, in seconds, a participant spent reading the question and options.</li>")
-    html_content.append("            <li><strong>`Answering_duration_s`</strong>: The estimated time, in seconds, a participant spent actively considering and selecting an answer.</li>")
+    html_content.append("            <li><strong>Reading_duration_s</strong>: The estimated time, in seconds, a participant spent reading the question and options.</li>")
+    html_content.append("            <li><strong>Answering_duration_s</strong>: The estimated time, in seconds, a participant spent actively considering and selecting an answer.</li>")
     html_content.append("            <li><strong>AOI (Area of Interest)</strong>: Predefined regions on the screen (e.g., Question, Choice A, Timer, Submit) used to aggregate gaze data.</li>")
     html_content.append("        </ul>")
     html_content.append("        <div class=\"section-divider\"></div>")
@@ -3272,10 +3314,9 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
         html_content.append("                <li><strong style='color:#F08080;'>Other Answers (Red):</strong> Combined time spent viewing incorrect answer options</li>")
         html_content.append("            </ul>")
         html_content.append("            <p>The <strong>upper panel</strong> displays absolute time (in seconds) as stacked bars, while the <strong>lower panel</strong> shows relative attention distribution (as percentages). Questions are sorted numerically (Q1, Q2, ..., Q15) for easy comparison.</p>")
-        html_content.append("            <p>📊 <strong>Download Data:</strong> <a href='../visualizations/avg_aoi_per_question.csv' download>avg_aoi_per_question.csv</a> — Average AOI times and percentages for each question</p>")
+        html_content.append(f"            <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['avg_aoi'].replace(chr(92), '/')}' target='_blank'>visualizations</a> — Contains avg_aoi_per_question.csv and other visualization files</p>")
         html_content.append("        </div>")
         html_content.append(f"        <img src=\"{aoi_summary_rel_path}\" alt=\"AOI Summary per Question\" class=\"img-fluid\" onclick=\"openModal(this)\">")
-        # If a CSV summary exists, include it as an HTML table below the image
         csv_summary_path = os.path.join(viz_dir, 'avg_aoi_per_question.csv')
         if os.path.exists(csv_summary_path):
             try:
@@ -3334,7 +3375,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     scatterplots_base_dir = os.path.join(viz_dir, 'points')
 
     all_participant_folders = sorted(list(set(os.listdir(heatmaps_base_dir) if os.path.exists(heatmaps_base_dir) else []) |\
-                                         set(os.listdir(scatterplots_base_dir) if os.path.exists(scatterplots_base_dir) else [])))
+                                         set(os.listdir(scatterplots_base_dir) if os.path.exists(scatterplots_base_dir) else [])), key=_extract_numeric_suffix)
 
     # AOI Time per Question
     aoi_q_path = os.path.join(viz_dir, 'aoi_time_per_question.png')
@@ -3387,7 +3428,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
         html_content.append("            <p><strong>📌 Navigation Tip:</strong> Click any chart to view in full-screen mode. Questions are sorted numerically (Q1-Q15) for consistent cross-participant comparison.</p>")
         html_content.append("        </div>")
         try:
-            p_folders = sorted([d for d in os.listdir(participant_bars_dir) if os.path.isdir(os.path.join(participant_bars_dir, d))])
+            p_folders = sorted([d for d in os.listdir(participant_bars_dir) if os.path.isdir(os.path.join(participant_bars_dir, d))], key=_extract_numeric_suffix)
             for p_folder in p_folders:
                 p_dir = os.path.join(participant_bars_dir, p_folder)
                 html_content.append(f"        <h4 style='color:#667eea; border-bottom:2px solid #764ba2; padding-bottom:5px;'>🔹 {display_participant(p_folder)}</h4>")
@@ -3419,7 +3460,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
             participant_scatterplots_dir = os.path.join(scatterplots_base_dir, p_folder)
 
             all_part_folders = sorted(list(set(os.listdir(participant_heatmaps_dir) if os.path.exists(participant_heatmaps_dir) else []) |\
-                                          set(os.listdir(participant_scatterplots_dir) if os.path.exists(participant_scatterplots_dir) else [])))
+                                          set(os.listdir(participant_scatterplots_dir) if os.path.exists(participant_scatterplots_dir) else [])), key=_extract_numeric_suffix)
             
             for part_folder in all_part_folders:
                 html_content.append(f"        <h5>{part_folder.replace('_', ' ')}</h5>")
@@ -3517,6 +3558,12 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        var modalImg = document.getElementById(\"img01\");")
     html_content.append("        var captionText = document.getElementById(\"caption\");")
     html_content.append("")
+    html_content.append("        // Zoom state variables")
+    html_content.append("        var zoomLevel = 1;")
+    html_content.append("        var panning = false;")
+    html_content.append("        var pointX = 0, pointY = 0;")
+    html_content.append("        var startX = 0, startY = 0;")
+    html_content.append("")
     html_content.append("        // Attach click only to images inside the main container to avoid modal internal images")
     html_content.append("        document.querySelectorAll('.container img').forEach(item => {")
     html_content.append("            item.onclick = function(){")
@@ -3524,21 +3571,104 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("                modal.style.display = \"block\";")
     html_content.append("                modalImg.src = this.src;")
     html_content.append("                captionText.innerHTML = this.alt || ''; ")
+    html_content.append("                // Reset zoom when opening")
+    html_content.append("                zoomLevel = 1;")
+    html_content.append("                pointX = 0;")
+    html_content.append("                pointY = 0;")
+    html_content.append("                modalImg.style.transform = 'scale(1)';")
+    html_content.append("                modalImg.style.cursor = 'zoom-in';")
     html_content.append("            }")
     html_content.append("        });")
+    html_content.append("")
+    html_content.append("        // Mouse wheel zoom")
+    html_content.append("        if (modalImg) {")
+    html_content.append("            modalImg.addEventListener('wheel', function(e) {")
+    html_content.append("                e.preventDefault();")
+    html_content.append("                var delta = e.deltaY > 0 ? 0.9 : 1.1;")
+    html_content.append("                zoomLevel *= delta;")
+    html_content.append("                zoomLevel = Math.min(Math.max(1, zoomLevel), 5);")
+    html_content.append("                modalImg.style.transform = 'scale(' + zoomLevel + ') translate(' + pointX + 'px, ' + pointY + 'px)';")
+    html_content.append("                modalImg.style.cursor = zoomLevel > 1 ? 'grab' : 'zoom-in';")
+    html_content.append("            });")
+    html_content.append("")
+    html_content.append("            // Click to toggle zoom")
+    html_content.append("            modalImg.addEventListener('click', function(e) {")
+    html_content.append("                e.stopPropagation();")
+    html_content.append("                if (zoomLevel === 1) {")
+    html_content.append("                    zoomLevel = 2.5;")
+    html_content.append("                } else {")
+    html_content.append("                    zoomLevel = 1;")
+    html_content.append("                    pointX = 0;")
+    html_content.append("                    pointY = 0;")
+    html_content.append("                }")
+    html_content.append("                modalImg.style.transform = 'scale(' + zoomLevel + ') translate(' + pointX + 'px, ' + pointY + 'px)';")
+    html_content.append("                modalImg.style.cursor = zoomLevel > 1 ? 'grab' : 'zoom-in';")
+    html_content.append("            });")
+    html_content.append("")
+    html_content.append("            // Pan when zoomed - mouse down")
+    html_content.append("            modalImg.addEventListener('mousedown', function(e) {")
+    html_content.append("                if (zoomLevel > 1) {")
+    html_content.append("                    e.preventDefault();")
+    html_content.append("                    panning = true;")
+    html_content.append("                    startX = e.clientX - pointX;")
+    html_content.append("                    startY = e.clientY - pointY;")
+    html_content.append("                    modalImg.style.cursor = 'grabbing';")
+    html_content.append("                }")
+    html_content.append("            });")
+    html_content.append("")
+    html_content.append("            // Pan when zoomed - mouse move")
+    html_content.append("            modalImg.addEventListener('mousemove', function(e) {")
+    html_content.append("                if (panning) {")
+    html_content.append("                    e.preventDefault();")
+    html_content.append("                    pointX = e.clientX - startX;")
+    html_content.append("                    pointY = e.clientY - startY;")
+    html_content.append("                    modalImg.style.transform = 'scale(' + zoomLevel + ') translate(' + pointX + 'px, ' + pointY + 'px)';")
+    html_content.append("                }")
+    html_content.append("            });")
+    html_content.append("")
+    html_content.append("            // Pan when zoomed - mouse up")
+    html_content.append("            modalImg.addEventListener('mouseup', function() {")
+    html_content.append("                if (panning) {")
+    html_content.append("                    panning = false;")
+    html_content.append("                    modalImg.style.cursor = zoomLevel > 1 ? 'grab' : 'zoom-in';")
+    html_content.append("                }")
+    html_content.append("            });")
+    html_content.append("")
+    html_content.append("            // Pan when zoomed - mouse leave")
+    html_content.append("            modalImg.addEventListener('mouseleave', function() {")
+    html_content.append("                if (panning) {")
+    html_content.append("                    panning = false;")
+    html_content.append("                    modalImg.style.cursor = zoomLevel > 1 ? 'grab' : 'zoom-in';")
+    html_content.append("                }")
+    html_content.append("            });")
+    html_content.append("        }")
     html_content.append("")
     html_content.append("        // Get the <span> element that closes the modal")
     html_content.append("        var span = document.getElementsByClassName(\"close\")[0];")
     html_content.append("        if (span) {")
     html_content.append("            span.onclick = function() {")
-    html_content.append("                if (modal) modal.style.display = \"none\";")
+    html_content.append("                if (modal) {")
+    html_content.append("                    modal.style.display = \"none\";")
+    html_content.append("                    // Reset zoom state")
+    html_content.append("                    zoomLevel = 1;")
+    html_content.append("                    pointX = 0;")
+    html_content.append("                    pointY = 0;")
+    html_content.append("                    panning = false;")
+    html_content.append("                }")
     html_content.append("            }")
     html_content.append("        }")
     html_content.append("")
     html_content.append("        // Close the modal when clicking outside the image")
     html_content.append("        window.onclick = function(event) {")
     html_content.append("            try {")
-    html_content.append("                if (event.target == modal) { if (modal) modal.style.display = \"none\"; }")
+    html_content.append("                if (event.target == modal) {")
+    html_content.append("                    if (modal) modal.style.display = \"none\";")
+    html_content.append("                    // Reset zoom state")
+    html_content.append("                    zoomLevel = 1;")
+    html_content.append("                    pointX = 0;")
+    html_content.append("                    pointY = 0;")
+    html_content.append("                    panning = false;")
+    html_content.append("                }")
     html_content.append("            } catch(e) {}")
     html_content.append("        }")
     html_content.append("</script>")
@@ -3637,7 +3767,6 @@ class ProgressMonitor:
         self.root.update_idletasks()
         width = self.root.winfo_width()
         height = self.root.winfo_height()
-        # اگر مقدار صفر بود، از مقدار پیشنهادی استفاده کن
         if width == 0 or height == 0:
             width = self.root.winfo_reqwidth()
             height = self.root.winfo_reqheight()
@@ -3711,7 +3840,6 @@ class ProgressMonitor:
         try:
             self.details_text.insert(tk.END, f"{text}\n")
             self.details_text.see(tk.END)
-            # حالت را به 'normal' نگه می‌داریم تا قابل انتخاب و کپی باشد
         except Exception:
             pass
 
@@ -3899,7 +4027,6 @@ def main():
             participant_ids = [f"participant_{i}" for i in participant_range]
             question_ids    = [f"Q{i}" for i in question_range]
 
-            # فقط همان‌ها را با ستون‌های حداقلی و dtype سبک بخوان
             usecols = ['BPOGX', 'BPOGY', 'FPOGS', 'BPOGV']
             dtypes  = {'BPOGX':'float32','BPOGY':'float32','FPOGS':'float32','BPOGV':'int8'}
             raw_df = load_all_participant_data(output_dir,
@@ -4026,14 +4153,11 @@ def main():
                 print("[Feature Engineering] Assigning AOIs and extracting phases...")
                 update_pipeline_progress(progress_queue, 4, 1, "Assigning AOIs and extracting phases...")
 
-                # مسیر خروجی فازها (اگر قبلاً تعریف نشده)
                 phase_output_path = os.path.join(reports_dir, "phases_per_participant.csv")
-                # Try to remove previous file if present; ignore failures (e.g. locked file)
                 if os.path.exists(phase_output_path):
                     try:
                         os.remove(phase_output_path)
                     except Exception as e_rm:
-                        # Log and continue; we'll fallback to per-participant files if needed
                         if progress_queue:
                             progress_queue.put(("log", f"Warning: could not remove existing phase output {phase_output_path}: {e_rm}. Will attempt to append or write per-participant files."))
 
@@ -4174,7 +4298,7 @@ def main():
                     if selected_plots.get('aoi_summary_per_question'):
                         visualize_aoi_summary_per_question(labeled_df_for_viz, correct_answers, viz_dir, progress_queue, cancel_event=cancel_event)
                     if selected_plots.get('aoi_per_question'):
-                        visualize_aoi_time_per_question(labeled_df_for_viz, viz_dir, question_texts, progress_queue, cancel_event=cancel_event)
+                        visualize_aoi_time_per_question(labeled_df_for_viz, viz_dir, question_texts, progress_queue, cancel_event=cancel_event, correct_answers=correct_answers)
                     if selected_plots.get('aoi_per_label'):
                         visualize_aoi_time_per_label(labeled_df_for_viz, viz_dir, progress_queue, cancel_event=cancel_event, correct_answers=correct_answers)
 
