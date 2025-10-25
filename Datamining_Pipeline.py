@@ -1772,6 +1772,13 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
 
             row = {'participant_id': pid, 'question_id': qid}
             row['Question'] = prow.get('Question', 0.0)
+            
+            # Add all individual choice columns
+            for letter in ['A', 'B', 'C', 'D']:
+                choice_col = f'Choice_{letter}'
+                row[choice_col] = prow.get(choice_col, 0.0)
+            
+            # Also track correct answer and incorrect sum for backward compatibility
             if correct_letter:
                 correct_col = f'Choice_{correct_letter}'
                 row['Correct_Answer'] = prow.get(correct_col, 0.0)
@@ -1780,15 +1787,15 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
                     if letter != correct_letter:
                         choice_col = f'Choice_{letter}'
                         other_sum += prow.get(choice_col, 0.0)
-                row['Other_Answers'] = other_sum
+                row['Incorrect_Answers'] = other_sum
             else:
-                print(f"Warning: Correct answer not found for participant {pid}, question {qid}. Summing all choices into 'Other_Answers'.")
+                print(f"Warning: Correct answer not found for participant {pid}, question {qid}. Summing all choices into 'Incorrect_Answers'.")
                 row['Correct_Answer'] = 0.0
                 other_sum = 0.0
                 for letter in ['A', 'B', 'C', 'D']:
                     choice_col = f'Choice_{letter}'
                     other_sum += prow.get(choice_col, 0.0)
-                row['Other_Answers'] = other_sum
+                row['Incorrect_Answers'] = other_sum
             per_trial_rows.append(row)
 
         if not per_trial_rows:
@@ -1797,8 +1804,9 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
 
         per_trial_df = pd.DataFrame(per_trial_rows)
 
-        # Average across participants for each question
-        avg_times = per_trial_df.groupby('question_id')[['Question', 'Correct_Answer', 'Other_Answers']].mean().reset_index()
+        # Average across participants for each question - include all AOI columns
+        agg_cols = ['Question', 'Choice_A', 'Choice_B', 'Choice_C', 'Choice_D', 'Correct_Answer', 'Incorrect_Answers']
+        avg_times = per_trial_df.groupby('question_id')[[col for col in agg_cols if col in per_trial_df.columns]].mean().reset_index()
         
         # Sort by numeric question ID
         try:
@@ -1811,13 +1819,16 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         if cancel_event and cancel_event.is_set(): return
         progress_queue.put(("stage_progress", (50, "Creating AOI summary visualization...")))
 
-        # Seconds + percents tables
+        # Seconds + percents tables - now with all choices
         avg_times = avg_times.set_index('question_id')
-        for c in ['Question', 'Correct_Answer', 'Other_Answers']:
+        
+        # Use columns: Question, Choice_A, Choice_B, Choice_C, Choice_D, Correct_Answer, Incorrect_Answers
+        display_cols = ['Question', 'Choice_A', 'Choice_B', 'Choice_C', 'Choice_D', 'Correct_Answer', 'Incorrect_Answers']
+        for c in display_cols:
             if c not in avg_times.columns:
                 avg_times[c] = 0.0
 
-        pivot_df = avg_times[['Question', 'Correct_Answer', 'Other_Answers']].copy()
+        pivot_df = avg_times[display_cols].copy()
         row_sums = pivot_df.sum(axis=1)
         percent_df = pivot_df.div(row_sums.replace({0: np.nan}), axis=0).fillna(0.0) * 100
 
@@ -1832,26 +1843,46 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
             pivot_df.sort_index(inplace=True)
             percent_df = percent_df.loc[pivot_df.index]
 
-        # Multi-line xlabels with seconds+percent
+        # Multi-line xlabels with seconds+percent for all categories
         try:
             summary_labels = []
             for q in pivot_df.index:
                 secs_q = float(pivot_df.at[q, 'Question'])
-                secs_c = float(pivot_df.at[q, 'Correct_Answer'])
-                secs_o = float(pivot_df.at[q, 'Other_Answers'])
+                secs_a = float(pivot_df.at[q, 'Choice_A'])
+                secs_b = float(pivot_df.at[q, 'Choice_B'])
+                secs_c = float(pivot_df.at[q, 'Choice_C'])
+                secs_d = float(pivot_df.at[q, 'Choice_D'])
+                secs_correct = float(pivot_df.at[q, 'Correct_Answer'])
+                secs_incorrect = float(pivot_df.at[q, 'Incorrect_Answers'])
+                
                 pct_q = float(percent_df.at[q, 'Question'])
-                pct_c = float(percent_df.at[q, 'Correct_Answer'])
-                pct_o = float(percent_df.at[q, 'Other_Answers'])
+                pct_a = float(percent_df.at[q, 'Choice_A'])
+                pct_b = float(percent_df.at[q, 'Choice_B'])
+                pct_c = float(percent_df.at[q, 'Choice_C'])
+                pct_d = float(percent_df.at[q, 'Choice_D'])
+                pct_correct = float(percent_df.at[q, 'Correct_Answer'])
+                pct_incorrect = float(percent_df.at[q, 'Incorrect_Answers'])
+                
                 lbl = (f"{q}\n"
                        f"Q: {pct_q:.1f}% ({secs_q:.1f}s)\n"
-                       f"C: {pct_c:.1f}% ({secs_c:.1f}s)\n"
-                       f"O: {pct_o:.1f}% ({secs_o:.1f}s)")
+                       f"A: {pct_a:.1f}% ({secs_a:.1f}s) B: {pct_b:.1f}% ({secs_b:.1f}s)\n"
+                       f"C: {pct_c:.1f}% ({secs_c:.1f}s) D: {pct_d:.1f}% ({secs_d:.1f}s)\n"
+                       f"Correct: {pct_correct:.1f}% ({secs_correct:.1f}s)\n"
+                       f"Incorrect: {pct_incorrect:.1f}% ({secs_incorrect:.1f}s)")
                 summary_labels.append(lbl)
         except Exception:
             summary_labels = list(pivot_df.index.astype(str))
 
-        colors = {'Question': 'skyblue', 'Correct_Answer': 'mediumseagreen', 'Other_Answers': 'lightcoral'}
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(18, 14), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
+        colors = {
+            'Question': 'skyblue', 
+            'Choice_A': '#ff9999', 
+            'Choice_B': '#ffcc99', 
+            'Choice_C': '#ffff99', 
+            'Choice_D': '#99ccff',
+            'Correct_Answer': 'mediumseagreen', 
+            'Incorrect_Answers': 'lightcoral'
+        }
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(20, 16), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
 
         pivot_df.plot(kind='bar', stacked=True, ax=ax1, color=[colors.get(c) for c in pivot_df.columns])
         ax1.set_title('Average Time Spent on AOIs per Question (Stacked seconds)')
@@ -1902,18 +1933,23 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         plt.savefig(output_path)
         print(f"Saved AOI summary per question (seconds + percent) to {output_path}")
 
-        # CSV کنار تصویر
+        # CSV with all columns
         try:
             summary_df = pivot_df.copy()
-            summary_df['Question_pct'] = percent_df['Question']
-            summary_df['Correct_Answer_pct'] = percent_df['Correct_Answer']
-            summary_df['Other_Answers_pct'] = percent_df['Other_Answers']
+            # Add percentage columns
+            for col in display_cols:
+                summary_df[f'{col}_pct'] = percent_df[col]
+            
             csv_path = os.path.join(viz_dir, 'avg_aoi_per_question.csv')
             summary_df.reset_index().rename(columns={
                 'question_id': 'question_id',
                 'Question': 'Question_s',
+                'Choice_A': 'Choice_A_s',
+                'Choice_B': 'Choice_B_s',
+                'Choice_C': 'Choice_C_s',
+                'Choice_D': 'Choice_D_s',
                 'Correct_Answer': 'Correct_Answer_s',
-                'Other_Answers': 'Other_Answers_s'
+                'Incorrect_Answers': 'Incorrect_Answers_s'
             }).to_csv(csv_path, index=False, float_format='%.3f')
             print(f"Saved AOI per-question summary CSV to {csv_path}")
         except Exception as e:
@@ -2248,7 +2284,7 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
 
             # Cumulative time (seconds) - STACKED bar chart
             try:
-                fig, ax = plt.subplots(figsize=(14, 7))
+                fig, ax = plt.subplots(figsize=(14, 8))
                 ind = np.arange(len(questions))
                 
                 # Create stacked bars
@@ -2257,15 +2293,17 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
                 p3 = ax.bar(ind, incorrect_times, bottom=question_times + correct_times, color='#d62728', label='Incorrect Answers')
                 
                 ax.set_xticks(ind)
-                ax.set_xticklabels(q_labels, rotation=45, ha='right')
+                ax.set_xticklabels(q_labels, rotation=0, ha='center', fontsize=10)
                 ax.set_title(f'Participant {pid} — Time per Question (seconds) - AOI Breakdown', fontsize=14, fontweight='bold')
                 ax.set_ylabel('Seconds', fontsize=12)
                 ax.set_xlabel('Question', fontsize=12)
                 ax.legend(loc='upper right')
                 ax.grid(axis='y', alpha=0.3)
                 
-                # Annotate: seconds ON bars, percentages BELOW bars
+                # Annotate: seconds ON bars, percentages BELOW x-axis
                 max_total = stack_totals.max() if len(stack_totals) > 0 else 1.0
+                y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
+                
                 for i_bar in range(len(ind)):
                     q_val = question_times[i_bar]
                     c_val = correct_times[i_bar]
@@ -2288,18 +2326,21 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
                                ha='center', va='center', fontsize=9, 
                                color='white', fontweight='bold')
                     
-                    # Percentages below bar
+                    # Percentages below x-axis labels (further down to avoid overlap)
                     if total_h > 0:
                         q_pct = (q_val / total_h * 100)
                         c_pct = (c_val / total_h * 100)
                         i_pct = (i_val / total_h * 100)
                         pct_text = f'Q:{q_pct:.0f}% C:{c_pct:.0f}% I:{i_pct:.0f}%'
-                        ax.text(i_bar, -0.03 * max_total, pct_text, 
+                        # Position below the x-axis at a fixed offset
+                        ax.text(i_bar, ax.get_ylim()[0] - 0.08 * y_range, pct_text, 
                                ha='center', va='top', fontsize=7, color='black')
                 
+                # Extend bottom margin to accommodate percentage text
+                plt.subplots_adjust(bottom=0.15)
                 plt.tight_layout()
                 sec_path = os.path.join(p_dir, 'cumulative_time_seconds.png')
-                fig.savefig(sec_path, dpi=150)
+                fig.savefig(sec_path, dpi=150, bbox_inches='tight')
                 plt.close(fig)
             except Exception as e:
                 print(f"Could not create seconds stacked bar chart for {pid}: {e}")
@@ -2308,7 +2349,7 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
 
             # Percent bar chart - STACKED
             try:
-                fig, ax = plt.subplots(figsize=(14, 7))
+                fig, ax = plt.subplots(figsize=(14, 8))
                 ind = np.arange(len(questions))
                 
                 # Calculate percentages for stacked display
@@ -2327,7 +2368,7 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
                 p3 = ax.bar(ind, i_pct, bottom=q_pct + c_pct, color='#d62728', label='Incorrect Answers')
                 
                 ax.set_xticks(ind)
-                ax.set_xticklabels(q_labels, rotation=45, ha='right')
+                ax.set_xticklabels(q_labels, rotation=0, ha='center', fontsize=10)
                 ax.set_title(f'Participant {pid} — Time per Question (%) - AOI Breakdown', fontsize=14, fontweight='bold')
                 ax.set_ylabel('Percent of Question Time (%)', fontsize=12)
                 ax.set_xlabel('Question', fontsize=12)
@@ -2335,7 +2376,7 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
                 ax.grid(axis='y', alpha=0.3)
                 ax.set_ylim(0, 100)
                 
-                # Annotate each segment with percentage ON bars
+                # Annotate each segment with percentage ON bars (no text below - percentages are already on bars)
                 for i_bar in range(len(ind)):
                     q_val = q_pct[i_bar]
                     c_val = c_pct[i_bar]
@@ -2352,9 +2393,10 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
                         ax.text(i_bar, q_val + c_val + i_val/2, f'{i_val:.0f}%', 
                                ha='center', va='center', color='white', fontsize=9, fontweight='bold')
                 
+                plt.subplots_adjust(bottom=0.12)
                 plt.tight_layout()
                 pct_path = os.path.join(p_dir, 'cumulative_time_percent.png')
-                fig.savefig(pct_path, dpi=150)
+                fig.savefig(pct_path, dpi=150, bbox_inches='tight')
                 plt.close(fig)
             except Exception as e:
                 print(f"Could not create percent stacked bar chart for {pid}: {e}")
@@ -2722,6 +2764,92 @@ def _df_to_markdown_table(df, max_rows=20):
         df_show = df_show.head(max_rows)
     return df_show.to_markdown(index=False)
 
+def _create_threshold_table_with_totals(stats_df, max_rows=20):
+    """
+    Creates an HTML table from threshold stats DataFrame with:
+    1. Numeric sorting by question_id
+    2. Total rows (aggregated across parts) inserted after each question's part rows
+    3. Different background color for total rows
+    
+    Returns HTML string.
+    """
+    if stats_df.empty:
+        return ""
+    
+    # Sort by numeric question order and part
+    df = stats_df.copy()
+    df['_sort_key'] = df['question_id'].apply(_extract_numeric_suffix)
+    
+    # Also create a sort key for part (extract numeric suffix from part as well)
+    if 'part' in df.columns:
+        df['_part_key'] = df['part'].apply(_extract_numeric_suffix)
+        df = df.sort_values(['_sort_key', '_part_key']).drop(['_sort_key', '_part_key'], axis=1).reset_index(drop=True)
+    else:
+        df = df.sort_values(['_sort_key']).drop('_sort_key', axis=1).reset_index(drop=True)
+    
+    # Limit to max_rows for display (after sorting)
+    if len(df) > max_rows:
+        df = df.head(max_rows)
+    
+    # Build HTML manually to insert total rows
+    html_parts = []
+    html_parts.append('<table class="table table-striped table-bordered">')
+    
+    # Header
+    html_parts.append('<thead><tr>')
+    for col in df.columns:
+        html_parts.append(f'<th>{col}</th>')
+    html_parts.append('</tr></thead>')
+    
+    html_parts.append('<tbody>')
+    
+    # Group by question and insert rows
+    questions = df['question_id'].unique()
+    numeric_cols = ['Q1', 'median', 'Q3', 'IQR', 'LB', 'n_all', 'Q1_C', 'median_C', 'Q3_C', 'IQR_C', 'UF_C', 'n_correct_valid']
+    
+    for q_id in questions:
+        q_data = df[df['question_id'] == q_id]
+        
+        # Add part rows
+        for _, row in q_data.iterrows():
+            html_parts.append('<tr>')
+            for col in df.columns:
+                val = row[col]
+                if pd.isna(val):
+                    html_parts.append('<td></td>')
+                elif col in numeric_cols:
+                    html_parts.append(f'<td>{val:.2f}</td>')
+                else:
+                    html_parts.append(f'<td>{val}</td>')
+            html_parts.append('</tr>')
+        
+        # Calculate and add Total row (aggregate across parts for this question)
+        if len(q_data) > 0:
+            html_parts.append('<tr style="background-color: #e8f4f8; font-weight: bold;">')
+            for col in df.columns:
+                if col == 'question_id':
+                    html_parts.append(f'<td>{q_id}</td>')
+                elif col == 'part':
+                    html_parts.append('<td>Total</td>')
+                elif col in numeric_cols:
+                    # Aggregate: use mean for stats, sum for counts
+                    if col in ['n_all', 'n_correct_valid']:
+                        total_val = q_data[col].sum()
+                    else:
+                        total_val = q_data[col].mean()
+                    if pd.notna(total_val):
+                        html_parts.append(f'<td>{total_val:.2f}</td>')
+                    else:
+                        html_parts.append('<td></td>')
+                else:
+                    html_parts.append('<td></td>')
+            html_parts.append('</tr>')
+    
+    html_parts.append('</tbody>')
+    html_parts.append('</table>')
+    
+    return ''.join(html_parts)
+
 def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, summary_img_path, viz_dir, config=None, gaze_validity_stats=None, participant_summary=None, removed_samples_summary=None):
     """
     Creates a structured HTML report describing pipeline stages and results,
@@ -2871,8 +2999,24 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
         try:
             if gaze_validity_stats is not None and not gaze_validity_stats.empty:
                 html_content.append("        <h4 class=\"mt-3\">Gaze Validity Statistics (sample)</h4>")
-                html_content.append("        <p>The table below shows the count and ratio of invalid gaze samples for each trial. Trials with an invalid ratio above the configured threshold are excluded from further analysis. A full CSV is available in the intermediate outputs folder.</p>")
-                html_content.append(gaze_validity_stats.head(50).to_html(index=False, classes='table table-striped table-bordered'))
+                html_content.append("        <p>The table below shows the count and ratio of invalid gaze samples for each trial. Trials with an invalid ratio above the configured threshold are excluded from further analysis.</p>")
+                html_content.append("        <p>📊 <strong>Download Full Data:</strong> <a href='../intermediate_processed_data/gaze_validity_stats.csv' download>gaze_validity_stats.csv</a> — Complete gaze validity statistics for all trials</p>")
+                # Sort gaze validity stats by participant and question
+                gvs_sorted = gaze_validity_stats.copy()
+                if 'participant_id' in gvs_sorted.columns:
+                    gvs_sorted['_pid_sort'] = gvs_sorted['participant_id'].apply(_extract_numeric_suffix)
+                if 'question_id' in gvs_sorted.columns:
+                    gvs_sorted['_qid_sort'] = gvs_sorted['question_id'].apply(_extract_numeric_suffix)
+                if 'part' in gvs_sorted.columns:
+                    gvs_sorted['_part_sort'] = gvs_sorted['part'].apply(_extract_numeric_suffix)
+                
+                sort_cols = [c for c in ['_pid_sort', '_qid_sort', '_part_sort'] if c in gvs_sorted.columns]
+                if sort_cols:
+                    gvs_sorted = gvs_sorted.sort_values(sort_cols)
+                    # Drop sort columns
+                    gvs_sorted = gvs_sorted.drop(columns=[c for c in ['_pid_sort', '_qid_sort', '_part_sort'] if c in gvs_sorted.columns])
+                
+                html_content.append(gvs_sorted.head(50).to_html(index=False, classes='table table-striped table-bordered'))
         except Exception:
             # If embedding fails, continue without breaking report generation
             pass
@@ -2889,7 +3033,8 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     if not stats_all.empty:
         html_content.append("        <h3 class=\"mt-4\">Sample of Computed Thresholds (LB)</h3>")
         html_content.append("        <p>The table below shows a sample of the calculated Q1, Median, Q3, IQR, and LB values for different question-part combinations. These thresholds are crucial for identifying outliers in interaction times.</p>")
-        html_content.append(stats_all.head(20).to_html(index=False, classes='table table-striped table-bordered'))
+        html_content.append("        <p>📊 <strong>Download Full Data:</strong> <a href='../intermediate_processed_data/stage2_outlier_stats.csv' download>stage2_outlier_stats.csv</a> — Complete threshold statistics for all questions</p>")
+        html_content.append(f"        {_create_threshold_table_with_totals(stats_all, max_rows=20)}")
     html_content.append("        <div class=\"section-divider\"></div>")
 
     html_content.append("        <h2 class=\"mt-5\">Stage 3 — Behavioral Labeling (Unusual/Normal Performance - UP/NP)</h2>")
@@ -2910,11 +3055,13 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        </ol>")
     html_content.append("        <h3 class=\"mt-4\">Label Distribution</h3>")
     html_content.append("        <p>The distribution of assigned behavioral labels across all valid interactions is as follows:</p>")
+    html_content.append("        <p>📊 <strong>Download Full Data:</strong> <a href='../intermediate_processed_data/stage3_labeled_data.csv' download>stage3_labeled_data.csv</a> — Complete labeled dataset with all interactions</p>")
     html_content.append(label_counts.to_html(index=False, classes='table table-striped table-bordered'))
     if not stats_c.empty:
         html_content.append("        <h3 class=\"mt-4\">Sample of Thresholds for Correct Answers (UF_C)</h3>")
         html_content.append("        <p>This table provides a sample of the calculated Q1_C, Median_C, Q3_C, IQR_C, and UF_C values, derived exclusively from correct responses. These thresholds are used to differentiate between normal and unusual performance among correct answers.</p>")
-        html_content.append(stats_c.head(20).to_html(index=False, classes='table table-striped table-bordered'))
+        html_content.append("        <p>📊 <strong>Download Full Data:</strong> <a href='../intermediate_processed_data/stage3_correct_stats.csv' download>stage3_correct_stats.csv</a> — Complete statistics for correct answers</p>")
+        html_content.append(f"        {_create_threshold_table_with_totals(stats_c, max_rows=20)}")
     html_content.append("        <div class=\"section-divider\"></div>")
 
     html_content.append("        <h2 class=\"mt-5\">Stage 4 — Area of Interest (AOI) Features & Cognitive Phases</h2>")
@@ -2936,7 +3083,24 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     if cols_show:
         html_content.append("        <h3 class=\"mt-4\">Sample of Final Processed Features (Stage 4)</h3>")
         html_content.append("        <p>The table below displays a sample of the enriched dataset after Stage 4, including behavioral labels, phase durations, and aggregated AOI gaze times. These features form the basis for further in-depth analysis.</p>")
-        html_content.append(final_df[cols_show].head(20).to_html(index=False, classes='table table-striped table-bordered'))
+        html_content.append("        <p>📊 <strong>Download Full Data:</strong> <a href='../outputs/' target='_blank'>View All Participant Outputs</a> — Individual CSV files for each participant with complete AOI features</p>")
+        # Sort by participant first, then question, then part (to show participant 1 Q1 Part1, participant 1 Q1 Part2, etc.)
+        final_df_sorted = final_df.copy()
+        if 'participant_id' in final_df_sorted.columns:
+            final_df_sorted['_pid_sort'] = final_df_sorted['participant_id'].apply(_extract_numeric_suffix)
+        if 'question_id' in final_df_sorted.columns:
+            final_df_sorted['_qid_sort'] = final_df_sorted['question_id'].apply(_extract_numeric_suffix)
+        if 'part' in final_df_sorted.columns:
+            final_df_sorted['_part_sort'] = final_df_sorted['part'].apply(_extract_numeric_suffix)
+        
+        # Sort order: participant first, then question, then part
+        sort_cols = [c for c in ['_pid_sort', '_qid_sort', '_part_sort'] if c in final_df_sorted.columns]
+        if sort_cols:
+            final_df_sorted = final_df_sorted.sort_values(sort_cols)
+        
+        # Drop sort keys and display
+        final_df_sorted = final_df_sorted[cols_show]
+        html_content.append(final_df_sorted.head(20).to_html(index=False, classes='table table-striped table-bordered'))
     html_content.append("        <div class=\"section-divider\"></div>")
 
     html_content.append("        <h2 class=\"mt-5\">Key Variables and Definitions</h2>")
@@ -3108,6 +3272,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
         html_content.append("                <li><strong style='color:#F08080;'>Other Answers (Red):</strong> Combined time spent viewing incorrect answer options</li>")
         html_content.append("            </ul>")
         html_content.append("            <p>The <strong>upper panel</strong> displays absolute time (in seconds) as stacked bars, while the <strong>lower panel</strong> shows relative attention distribution (as percentages). Questions are sorted numerically (Q1, Q2, ..., Q15) for easy comparison.</p>")
+        html_content.append("            <p>📊 <strong>Download Data:</strong> <a href='../visualizations/avg_aoi_per_question.csv' download>avg_aoi_per_question.csv</a> — Average AOI times and percentages for each question</p>")
         html_content.append("        </div>")
         html_content.append(f"        <img src=\"{aoi_summary_rel_path}\" alt=\"AOI Summary per Question\" class=\"img-fluid\" onclick=\"openModal(this)\">")
         # If a CSV summary exists, include it as an HTML table below the image
@@ -3300,6 +3465,53 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        <div id=\"caption\"></div>")
     html_content.append("    </div>")
     html_content.append("<script>")
+    html_content.append("        // t_ij Summary Statistics Chart")
+    html_content.append(f"        var tijCtx = document.getElementById('tijSummaryChart');")
+    html_content.append(f"        if (tijCtx) {{")
+    html_content.append(f"            new Chart(tijCtx, {{")
+    html_content.append(f"                type: 'bar',")
+    html_content.append(f"                data: {{")
+    html_content.append(f"                    labels: ['Mean', 'Median', 'Std Dev'],")
+    html_content.append(f"                    datasets: [{{")
+    html_content.append(f"                        label: 'Time (seconds)',")
+    html_content.append(f"                        data: [{mean_val:.2f}, {median_val:.2f}, {std_val:.2f}],")
+    html_content.append(f"                        backgroundColor: ['#4e79a7', '#f28e2c', '#e15759'],")
+    html_content.append(f"                        borderColor: ['#2c5074', '#c46d1a', '#a83032'],")
+    html_content.append(f"                        borderWidth: 2")
+    html_content.append(f"                    }}]")
+    html_content.append(f"                }},")
+    html_content.append(f"                options: {{")
+    html_content.append(f"                    responsive: true,")
+    html_content.append(f"                    maintainAspectRatio: true,")
+    html_content.append(f"                    plugins: {{")
+    html_content.append(f"                        legend: {{ display: false }},")
+    html_content.append(f"                        title: {{")
+    html_content.append(f"                            display: true,")
+    html_content.append(f"                            text: 'Interaction Time (t_ij) Summary Statistics',")
+    html_content.append(f"                            font: {{ size: 16, weight: 'bold' }}")
+    html_content.append(f"                        }}")
+    html_content.append(f"                    }},")
+    html_content.append(f"                    scales: {{")
+    html_content.append(f"                        y: {{")
+    html_content.append(f"                            beginAtZero: true,")
+    html_content.append(f"                            title: {{")
+    html_content.append(f"                                display: true,")
+    html_content.append(f"                                text: 'Time (seconds)',")
+    html_content.append(f"                                font: {{ size: 14 }}")
+    html_content.append(f"                            }}")
+    html_content.append(f"                        }},")
+    html_content.append(f"                        x: {{")
+    html_content.append(f"                            title: {{")
+    html_content.append(f"                                display: true,")
+    html_content.append(f"                                text: 'Statistic',")
+    html_content.append(f"                                font: {{ size: 14 }}")
+    html_content.append(f"                            }}")
+    html_content.append(f"                        }}")
+    html_content.append(f"                    }}")
+    html_content.append(f"                }}")
+    html_content.append(f"            }});")
+    html_content.append(f"        }}")
+    html_content.append("")
     html_content.append("        // Get the modal and elements")
     html_content.append("        var modal = document.getElementById(\"myModal\");")
     html_content.append("        var modalImg = document.getElementById(\"img01\");")
