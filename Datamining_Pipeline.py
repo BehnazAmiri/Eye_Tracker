@@ -2891,14 +2891,14 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     """
     os.makedirs(os.path.dirname(report_path), exist_ok=True)
 
-    # Build absolute folder paths for CSV file locations
+    # Build absolute file paths for CSV files
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_folders = {
-        'gaze_validity': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data')),
-        'stage2_outlier': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data')),
-        'stage3_labeled': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data')),
-        'stage3_correct': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data')),
-        'avg_aoi': os.path.abspath(os.path.join(script_dir, 'visualizations'))
+    csv_paths = {
+        'gaze_validity': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data', 'gaze_validity_stats.csv')),
+        'stage2_outlier': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data', 'stage2_outlier_stats.csv')),
+        'stage3_labeled': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data', 'stage3_labeled_data.csv')),
+        'stage3_correct': os.path.abspath(os.path.join(script_dir, 'intermediate_processed_data', 'stage3_correct_stats.csv')),
+        'avg_aoi': os.path.abspath(os.path.join(script_dir, 'visualizations', 'avg_aoi_per_question.csv'))
     }
 
     # Calculate stats for chart
@@ -3047,7 +3047,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
             if gaze_validity_stats is not None and not gaze_validity_stats.empty:
                 html_content.append("        <h4 class=\"mt-3\">Gaze Validity Statistics (sample)</h4>")
                 html_content.append("        <p>The table below shows the count and ratio of invalid gaze samples for each trial. Trials with an invalid ratio above the configured threshold are excluded from further analysis.</p>")
-                html_content.append(f"        <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['gaze_validity'].replace(chr(92), '/')}' target='_blank'>intermediate_processed_data</a> — Contains gaze_validity_stats.csv and other intermediate files</p>")
+                html_content.append(f"        <p>📊 <strong>Open CSV File:</strong> <a href='file:///{csv_paths['gaze_validity'].replace(chr(92), '/')}' target='_blank'>gaze_validity_stats.csv</a> — Complete gaze validity statistics for all trials</p>")
                 gvs_sorted = gaze_validity_stats.copy()
                 if 'participant_id' in gvs_sorted.columns:
                     gvs_sorted['_pid_sort'] = gvs_sorted['participant_id'].apply(_extract_numeric_suffix)
@@ -3079,7 +3079,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     if not stats_all.empty:
         html_content.append("        <h3 class=\"mt-4\">Sample of Computed Thresholds (LB)</h3>")
         html_content.append("        <p>The table below shows a sample of the calculated Q1, Median, Q3, IQR, and LB values for different question-part combinations. These thresholds are crucial for identifying outliers in interaction times.</p>")
-        html_content.append(f"        <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['stage2_outlier'].replace(chr(92), '/')}' target='_blank'>intermediate_processed_data</a> — Contains stage2_outlier_stats.csv and other files</p>")
+        html_content.append(f"        <p>📊 <strong>Open CSV File:</strong> <a href='file:///{csv_paths['stage2_outlier'].replace(chr(92), '/')}' target='_blank'>stage2_outlier_stats.csv</a> — Complete threshold statistics for all questions</p>")
         html_content.append(f"        {_create_threshold_table_with_totals(stats_all, max_rows=20)}")
     html_content.append("        <div class=\"section-divider\"></div>")
 
@@ -3101,12 +3101,12 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        </ol>")
     html_content.append("        <h3 class=\"mt-4\">Label Distribution</h3>")
     html_content.append("        <p>The distribution of assigned behavioral labels across all valid interactions is as follows:</p>")
-    html_content.append(f"        <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['stage3_labeled'].replace(chr(92), '/')}' target='_blank'>intermediate_processed_data</a> — Contains stage3_labeled_data.csv and other files</p>")
+    html_content.append(f"        <p>📊 <strong>Open CSV File:</strong> <a href='file:///{csv_paths['stage3_labeled'].replace(chr(92), '/')}' target='_blank'>stage3_labeled_data.csv</a> — Complete labeled dataset with all interactions</p>")
     html_content.append(label_counts.to_html(index=False, classes='table table-striped table-bordered'))
     if not stats_c.empty:
         html_content.append("        <h3 class=\"mt-4\">Sample of Thresholds for Correct Answers (UF_C)</h3>")
         html_content.append("        <p>This table provides a sample of the calculated Q1_C, Median_C, Q3_C, IQR_C, and UF_C values, derived exclusively from correct responses. These thresholds are used to differentiate between normal and unusual performance among correct answers.</p>")
-        html_content.append(f"        <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['stage3_correct'].replace(chr(92), '/')}' target='_blank'>intermediate_processed_data</a> — Contains stage3_correct_stats.csv and other files</p>")
+        html_content.append(f"        <p>📊 <strong>Open CSV File:</strong> <a href='file:///{csv_paths['stage3_correct'].replace(chr(92), '/')}' target='_blank'>stage3_correct_stats.csv</a> — Complete statistics for correct answers</p>")
         html_content.append(f"        {_create_threshold_table_with_totals(stats_c, max_rows=20)}")
     html_content.append("        <div class=\"section-divider\"></div>")
 
@@ -3314,7 +3314,7 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
         html_content.append("                <li><strong style='color:#F08080;'>Other Answers (Red):</strong> Combined time spent viewing incorrect answer options</li>")
         html_content.append("            </ul>")
         html_content.append("            <p>The <strong>upper panel</strong> displays absolute time (in seconds) as stacked bars, while the <strong>lower panel</strong> shows relative attention distribution (as percentages). Questions are sorted numerically (Q1, Q2, ..., Q15) for easy comparison.</p>")
-        html_content.append(f"            <p>📊 <strong>Open Folder:</strong> <a href='file:///{csv_folders['avg_aoi'].replace(chr(92), '/')}' target='_blank'>visualizations</a> — Contains avg_aoi_per_question.csv and other visualization files</p>")
+        html_content.append(f"            <p>📊 <strong>Open CSV File:</strong> <a href='file:///{csv_paths['avg_aoi'].replace(chr(92), '/')}' target='_blank'>avg_aoi_per_question.csv</a> — Average AOI times and percentages for each question</p>")
         html_content.append("        </div>")
         html_content.append(f"        <img src=\"{aoi_summary_rel_path}\" alt=\"AOI Summary per Question\" class=\"img-fluid\" onclick=\"openModal(this)\">")
         csv_summary_path = os.path.join(viz_dir, 'avg_aoi_per_question.csv')
@@ -3777,7 +3777,9 @@ class ProgressMonitor:
     def _open_report(self):
         import webbrowser
         if self.report_path and os.path.exists(self.report_path):
-            webbrowser.open(self.report_path)
+            # Convert to file URL for proper opening in browser
+            report_url = 'file:///' + os.path.abspath(self.report_path).replace('\\', '/')
+            webbrowser.open(report_url)
         else:
             import tkinter.messagebox as messagebox
             messagebox.showwarning("File Not Found", "The report file could not be found.")
@@ -3946,6 +3948,9 @@ def main():
                     monitor.update_progress(100, "Pipeline finished successfully!")
                     monitor.append_log("Pipeline finished successfully!")
                     monitor.stop_timer()
+                    # Set report path from value
+                    if value:
+                        monitor.report_path = value
                     # Enable Open Report button
                     monitor.open_report_button.config(state=tk.NORMAL)
                     monitor.cancel_button.config(text="Close", command=monitor.close)
@@ -4353,7 +4358,7 @@ def main():
                     write_html_report(report_path, stats_all, stats_c, labeled_df, (final_df if 'final_df' in locals() and final_df is not None else labeled_df), summary_img_path, viz_dir, config=config, gaze_validity_stats=gaze_validity_stats, participant_summary=participant_summary, removed_samples_summary=removed_samples_summary)
                     if progress_queue:
                         progress_queue.put(("log", f"Report written to {report_path}"))
-                        progress_queue.put(("done", None))
+                        progress_queue.put(("done", report_path))
                 except Exception as e_report:
                     tb_report = traceback.format_exc()
                     report_err_path = os.path.join(reports_dir, 'pipeline_exception.txt')
