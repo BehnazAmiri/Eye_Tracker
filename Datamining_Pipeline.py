@@ -1335,6 +1335,7 @@ def engineer_features(raw_df, processed_df):
 
     # aggregate AOI times too (downcast to float32). Use a safe fallback limiting to top-N AOIs if required.
     aoi_time = None
+    aoi_fallback = False
     try:
         aoi_time = raw_df.groupby(['participant_id', 'question_id', 'AOI'])['duration'].sum().unstack(fill_value=0)
         try:
@@ -1342,7 +1343,12 @@ def engineer_features(raw_df, processed_df):
         except Exception:
             pass
         aoi_time = aoi_time.reset_index()
-        aoi_fallback = False
+        # Flatten column names if MultiIndex (unstack can create MultiIndex columns)
+        if isinstance(aoi_time.columns, pd.MultiIndex):
+            aoi_time.columns = ['_'.join(map(str, col)).strip('_') if isinstance(col, tuple) else col for col in aoi_time.columns]
+        # Remove the 'AOI' column name label from the columns Index
+        aoi_time.columns.name = None
+        print(f"[DEBUG] AOI time pivot succeeded. Columns: {list(aoi_time.columns)}")
     except MemoryError:
         import traceback as _tb
         tb = _tb.format_exc()
@@ -1360,12 +1366,34 @@ def engineer_features(raw_df, processed_df):
                 aoi_pivot = aoi_pivot.astype('float32')
             except Exception:
                 pass
+            # Flatten column names if MultiIndex
+            if isinstance(aoi_pivot.columns, pd.MultiIndex):
+                aoi_pivot.columns = ['_'.join(map(str, col)).strip('_') if isinstance(col, tuple) else col for col in aoi_pivot.columns]
+            # Remove the 'AOI' column name label
+            aoi_pivot.columns.name = None
             aoi_time = aoi_pivot
             aoi_fallback = True
-        except Exception:
+            print(f"[DEBUG] AOI time pivot fallback succeeded. Columns: {list(aoi_time.columns)}")
+        except Exception as e:
             # If even the limited pivot fails, keep the long form as a CSV and skip merging wide AOI columns
+            import traceback as _tb
+            tb = _tb.format_exc()
+            with open(os.path.join(reports_dir, 'memory_error_traceback.txt'), 'a', encoding='utf-8') as _f:
+                _f.write('\n--- Exception during AOI pivot fallback ---\n')
+                _f.write(tb)
+            print(f"[DEBUG] AOI time pivot fallback FAILED: {e}")
             aoi_time = None
             aoi_fallback = True
+    except Exception as e:
+        # Catch any other exception during the initial unstack
+        import traceback as _tb
+        tb = _tb.format_exc()
+        with open(os.path.join(reports_dir, 'memory_error_traceback.txt'), 'a', encoding='utf-8') as _f:
+            _f.write('\n--- Exception during AOI unstack ---\n')
+            _f.write(tb)
+        print(f"[DEBUG] AOI time pivot FAILED with exception: {e}")
+        aoi_time = None
+        aoi_fallback = True
 
     # Merge features into the main processed dataframe
     final_df = pd.merge(processed_df, phase_durations, on=['participant_id', 'question_id'], how='left')
@@ -1771,6 +1799,14 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
 
         # Average across participants for each question
         avg_times = per_trial_df.groupby('question_id')[['Question', 'Correct_Answer', 'Other_Answers']].mean().reset_index()
+        
+        # Sort by numeric question ID
+        try:
+            avg_times['q_sort'] = avg_times['question_id'].apply(lambda x: _extract_numeric_suffix(x))
+            avg_times.sort_values('q_sort', inplace=True)
+            avg_times.drop('q_sort', axis=1, inplace=True)
+        except Exception:
+            avg_times.sort_values('question_id', inplace=True)
 
         if cancel_event and cancel_event.is_set(): return
         progress_queue.put(("stage_progress", (50, "Creating AOI summary visualization...")))
@@ -1785,8 +1821,16 @@ def visualize_aoi_summary_per_question(df, correct_answers, viz_dir, progress_qu
         row_sums = pivot_df.sum(axis=1)
         percent_df = pivot_df.div(row_sums.replace({0: np.nan}), axis=0).fillna(0.0) * 100
 
-        pivot_df.sort_index(inplace=True)
-        percent_df = percent_df.loc[pivot_df.index]
+        # Sort by numeric question ID instead of alphabetical
+        try:
+            # Create a temporary column for sorting
+            pivot_df['_sort_key'] = pivot_df.index.map(lambda x: _extract_numeric_suffix(x))
+            pivot_df.sort_values('_sort_key', inplace=True)
+            pivot_df.drop('_sort_key', axis=1, inplace=True)
+            percent_df = percent_df.loc[pivot_df.index]
+        except Exception:
+            pivot_df.sort_index(inplace=True)
+            percent_df = percent_df.loc[pivot_df.index]
 
         # Multi-line xlabels with seconds+percent
         try:
@@ -1899,6 +1943,15 @@ def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue,
         progress_queue.put(("stage_progress", (20, "Calculating average AOI time per question...")))
         if cancel_event and cancel_event.is_set(): return
         aoi_avg_time_q = df.groupby('question_id')[aoi_cols].mean().reset_index()
+        
+        # Sort by numeric question ID
+        try:
+            aoi_avg_time_q['q_sort'] = aoi_avg_time_q['question_id'].apply(lambda x: _extract_numeric_suffix(x))
+            aoi_avg_time_q.sort_values('q_sort', inplace=True)
+            aoi_avg_time_q.drop('q_sort', axis=1, inplace=True)
+        except Exception:
+            aoi_avg_time_q.sort_values('question_id', inplace=True)
+        
         aoi_avg_time_q_melted = aoi_avg_time_q.melt(id_vars='question_id', var_name='AOI', value_name='Average Duration (s)')
 
         progress_queue.put(("stage_progress", (50, "Creating visualization...")))
@@ -1921,43 +1974,140 @@ def visualize_aoi_time_per_question(df, viz_dir, question_texts, progress_queue,
         plt.close()
         print("--- AOI time per question chart generation finished ---")
 
-def visualize_aoi_time_per_label(df, viz_dir, progress_queue, cancel_event=None):
+def visualize_aoi_time_per_label(df, viz_dir, progress_queue, cancel_event=None, correct_answers=None):
+    """
+    Generates AOI time per label (UP/NP) bar chart.
+    Shows 3 categories: Question, Correct Answer, Incorrect Answers (sum).
+    Annotates bars with both seconds and percentage.
+    """
     print("Generating AOI time per label bar charts...")
     if 'aoi_cols' not in df.columns and not any(col.startswith('Choice_') for col in df.columns):
         print("Warning: No AOI columns found for 'AOI Time per Label' visualization.")
         return
-    if cancel_event and cancel_event.is_set(): return
+    if cancel_event and cancel_event.is_set(): 
+        return
 
+    # Find all AOI columns
     aoi_cols = [c for c in df.columns if c.startswith('Choice_') or c in ['Question', 'Timer', 'Submit']]
     if not aoi_cols:
         print("Warning: No AOI columns found for 'AOI Time per Label' visualization.")
         return
 
+    # Filter to UP/NP only
     filtered_df = df[df['label'].isin(['UP', 'NP'])].copy()
     if filtered_df.empty:
         print("Warning: No valid UP/NP labels found for 'AOI Time per Label' visualization.")
         return
 
-    try:
-        progress_queue.put(("stage_progress", (20, "Calculating average AOI time per label...")))
-        if cancel_event and cancel_event.is_set(): return
-        aoi_avg_time_l = filtered_df.groupby('label')[aoi_cols].mean().reset_index()
-        aoi_avg_time_l_melted = aoi_avg_time_l.melt(id_vars='label', var_name='AOI', value_name='Average Duration (s)')
+    # Need correct_answers to identify correct vs incorrect choices
+    if correct_answers is None or filtered_df.empty:
+        print("Warning: correct_answers not provided for 'AOI Time per Label' visualization.")
+        return
 
-        progress_queue.put(("stage_progress", (70, "Creating bar chart for AOI time per label...")))
-        if cancel_event and cancel_event.is_set(): return
-        plt.figure(figsize=(12, 7))
-        sns.barplot(data=aoi_avg_time_l_melted, x='label', y='Average Duration (s)', hue='AOI', palette='viridis')
-        plt.title('Average Time Spent in Each AOI per Behavioral Label (UP/NP)')
-        plt.xlabel('Behavioral Label')
-        plt.ylabel('Average Duration (s)')
-        plt.legend(title='AOI', bbox_to_anchor=(1.05, 1), loc='upper left')
+    try:
+        if progress_queue:
+            progress_queue.put(("stage_progress", (20, "Calculating average AOI time per label...")))
+        if cancel_event and cancel_event.is_set(): 
+            return
+
+        # Build aggregated AOI columns: Question, Correct_Answer, Incorrect_Answers
+        def aggregate_aoi_row(row):
+            q_id = row.get('question_id')
+            correct_choice = correct_answers.get(q_id, None)
+            
+            question_time = row.get('Question', 0.0)
+            correct_time = 0.0
+            incorrect_time = 0.0
+            
+            # Sum all Choice_* columns
+            for col in [c for c in aoi_cols if c.startswith('Choice_')]:
+                val = row.get(col, 0.0)
+                if pd.isna(val):
+                    val = 0.0
+                # Extract choice letter from column name (e.g., 'Choice_A' -> 'A')
+                choice_letter = col.replace('Choice_', '')
+                if choice_letter == correct_choice:
+                    correct_time += val
+                else:
+                    incorrect_time += val
+            
+            return pd.Series({
+                'Question': question_time,
+                'Correct_Answer': correct_time,
+                'Incorrect_Answers': incorrect_time
+            })
+
+        # Apply aggregation per row
+        aggregated = filtered_df.apply(aggregate_aoi_row, axis=1)
+        # Add label column back
+        aggregated['label'] = filtered_df['label'].values
+
+        # Calculate mean per label
+        aoi_avg_time_l = aggregated.groupby('label')[['Question', 'Correct_Answer', 'Incorrect_Answers']].mean().reset_index()
+        
+        # Melt for plotting
+        aoi_avg_time_l_melted = aoi_avg_time_l.melt(
+            id_vars='label', 
+            value_vars=['Question', 'Correct_Answer', 'Incorrect_Answers'],
+            var_name='AOI', 
+            value_name='Average Duration (s)'
+        )
+
+        if progress_queue:
+            progress_queue.put(("stage_progress", (70, "Creating bar chart for AOI time per label...")))
+        if cancel_event and cancel_event.is_set(): 
+            return
+
+        # Create grouped bar chart
+        fig, ax = plt.subplots(figsize=(12, 7))
+        
+        # Plot grouped bars
+        labels = aoi_avg_time_l_melted['label'].unique()
+        aois = ['Question', 'Correct_Answer', 'Incorrect_Answers']
+        x = np.arange(len(labels))
+        width = 0.25
+        
+        colors = ['#1f77b4', '#2ca02c', '#d62728']  # Blue, Green, Red
+        
+        for i, aoi in enumerate(aois):
+            aoi_data = aoi_avg_time_l_melted[aoi_avg_time_l_melted['AOI'] == aoi]
+            values = [aoi_data[aoi_data['label'] == lbl]['Average Duration (s)'].values[0] if not aoi_data[aoi_data['label'] == lbl].empty else 0 for lbl in labels]
+            
+            bars = ax.bar(x + i * width, values, width, label=aoi.replace('_', ' '), color=colors[i])
+            
+            # Annotate bars with seconds and percentage
+            for j, (bar, val) in enumerate(zip(bars, values)):
+                if val > 0:
+                    # Calculate percentage of total time for this label
+                    label_name = labels[j]
+                    total_time = aoi_avg_time_l[aoi_avg_time_l['label'] == label_name][['Question', 'Correct_Answer', 'Incorrect_Answers']].sum(axis=1).values[0]
+                    pct = (val / total_time * 100) if total_time > 0 else 0
+                    
+                    # Annotate with "X.Xs (Y.Y%)"
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width() / 2., height,
+                            f'{val:.1f}s\n({pct:.1f}%)',
+                            ha='center', va='bottom', fontsize=9, fontweight='bold')
+        
+        ax.set_xlabel('Behavioral Label', fontsize=12)
+        ax.set_ylabel('Average Duration (seconds)', fontsize=12)
+        ax.set_title('Average Time Spent per AOI Category by Behavioral Label (UP/NP)', fontsize=14, fontweight='bold')
+        ax.set_xticks(x + width)
+        ax.set_xticklabels(labels)
+        ax.legend(title='AOI Category', loc='upper right')
+        ax.grid(axis='y', alpha=0.3)
+        
         plt.tight_layout()
 
         aoi_l_path = os.path.join(viz_dir, 'aoi_time_per_label.png')
-        plt.savefig(aoi_l_path)
+        plt.savefig(aoi_l_path, dpi=150)
         print(f"Saved AOI time per label bar chart to {aoi_l_path}")
-        progress_queue.put(("stage_progress", (100, "AOI time per label chart generated.")))
+        if progress_queue:
+            progress_queue.put(("stage_progress", (100, "AOI time per label chart generated.")))
+    except Exception as e:
+        print(f"Error generating AOI time per label chart: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         plt.close()
 
@@ -1998,6 +2148,13 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
             if has_question_aoi or choice_cols:
                 # Prepare breakdown dataframe
                 per_q = p_df.groupby('question_id', sort=False).agg({**({'Question':'sum'} if has_question_aoi else {}), **({c:'sum' for c in choice_cols} if choice_cols else {})}).reset_index()
+                # Sort per_q by numeric suffix
+                try:
+                    per_q['q_sort'] = per_q['question_id'].apply(lambda x: _extract_numeric_suffix(x))
+                    per_q.sort_values('q_sort', inplace=True)
+                    per_q.drop('q_sort', axis=1, inplace=True)
+                except Exception:
+                    per_q.sort_values('question_id', inplace=True)
             else:
                 per_q = None
             # Sort question ids numerically if possible
@@ -2013,65 +2170,196 @@ def visualize_participant_cumulative(df, viz_dir, progress_queue=None, cancel_ev
             total_secs = secs.sum()
             pct = (secs / total_secs * 100) if total_secs > 0 else secs * 0
 
-            # Cumulative time (seconds) bar chart
-            try:
-                fig, ax = plt.subplots(figsize=(12, 6))
-                # Use clear color map and a consistent color for bars
-                bars = sns.barplot(x=q_labels, y=secs.values, color='tab:blue', ax=ax)
-                ax.set_xticklabels(q_labels, rotation=45, ha='right')
-                ax.set_title(f'Participant {pid} — Time per Question (s)')
-                ax.set_ylabel('Seconds')
-                ax.set_xlabel('Question')
-                # Annotate bars with integer seconds; move small labels above bar
-                max_sec = total_secs if total_secs > 0 else secs.max() if len(secs) > 0 else 1.0
-                for bar, val in zip(bars.patches, secs.values):
+            # Prepare AOI breakdown data (Question, Correct Answer, Incorrect Answers) for stacked bars
+            # Determine correct answer for each question
+            def get_correct_choice_col(q_id):
+                """Return the correct Choice_X column name for a given question_id."""
+                c = None
+                # 1) Check global correct_answers mapping
+                if correct_answers and q_id in correct_answers:
+                    val = correct_answers.get(q_id)
+                    if isinstance(val, str) and len(val) == 1 and val.isalpha():
+                        c = f"Choice_{val.upper()}"
+                # 2) Check participant-specific mapping (from question_exams)
+                if not c:
                     try:
-                        h = bar.get_height()
-                        if np.isnan(val):
-                            continue
-                        txt = f"{int(round(val))}s"
-                        # If bar is very small relative to max, place label above
-                        if max_sec > 0 and h < max_sec * 0.03:
-                            ax.text(bar.get_x() + bar.get_width()/2, h + max(0.5, 0.01 * max_sec), txt, ha='center', va='bottom', fontsize=9)
-                        else:
-                            ax.text(bar.get_x() + bar.get_width()/2, h/2, txt, ha='center', va='center', fontsize=9, color='white')
+                        script_dir = os.path.dirname(os.path.abspath(__file__))
+                        qexam_dir = os.path.join(script_dir, 'question_exams')
+                        pnum = str(pid).split('_')[-1]
+                        qfile = os.path.join(qexam_dir, f'Participant_{pnum}.json')
+                        if os.path.exists(qfile):
+                            with open(qfile, 'r', encoding='utf-8') as jf:
+                                qdata = json.load(jf)
+                                for part_name in ('Part1', 'Part2'):
+                                    for item in qdata.get(part_name, []):
+                                        qid_local = item.get('question_id')
+                                        if f'Q{qid_local}' == q_id:
+                                            opts = item.get('options', [])
+                                            for idx, opt in enumerate(opts):
+                                                oid = opt.get('id', '')
+                                                if isinstance(oid, str) and oid.endswith('-C'):
+                                                    letter = chr(ord('A') + idx)
+                                                    c = f"Choice_{letter}"
+                                                    break
+                                            break
+                                    if c:
+                                        break
                     except Exception:
                         pass
+                return c
+
+            # Build stacked data: Question time, Correct time, Incorrect time per question
+            question_times = []
+            correct_times = []
+            incorrect_times = []
+            
+            for q_id in questions:
+                # Get row from p_df for this question (aggregate if multiple rows)
+                q_rows = p_df[p_df['question_id'] == q_id]
+                if q_rows.empty:
+                    question_times.append(0.0)
+                    correct_times.append(0.0)
+                    incorrect_times.append(0.0)
+                    continue
+                
+                # Sum AOI columns for this question
+                q_time = q_rows['Question'].sum() if 'Question' in q_rows.columns else 0.0
+                
+                # Get correct choice column
+                correct_col = get_correct_choice_col(q_id)
+                c_time = q_rows[correct_col].sum() if correct_col and correct_col in q_rows.columns else 0.0
+                
+                # Sum all incorrect choices
+                i_time = 0.0
+                for col in choice_cols:
+                    if col != correct_col:
+                        i_time += q_rows[col].sum() if col in q_rows.columns else 0.0
+                
+                question_times.append(q_time)
+                correct_times.append(c_time)
+                incorrect_times.append(i_time)
+
+            question_times = np.array(question_times)
+            correct_times = np.array(correct_times)
+            incorrect_times = np.array(incorrect_times)
+            
+            # Calculate totals for percentage
+            stack_totals = question_times + correct_times + incorrect_times
+
+            # Cumulative time (seconds) - STACKED bar chart
+            try:
+                fig, ax = plt.subplots(figsize=(14, 7))
+                ind = np.arange(len(questions))
+                
+                # Create stacked bars
+                p1 = ax.bar(ind, question_times, color='#1f77b4', label='Question')
+                p2 = ax.bar(ind, correct_times, bottom=question_times, color='#2ca02c', label='Correct Answer')
+                p3 = ax.bar(ind, incorrect_times, bottom=question_times + correct_times, color='#d62728', label='Incorrect Answers')
+                
+                ax.set_xticks(ind)
+                ax.set_xticklabels(q_labels, rotation=45, ha='right')
+                ax.set_title(f'Participant {pid} — Time per Question (seconds) - AOI Breakdown', fontsize=14, fontweight='bold')
+                ax.set_ylabel('Seconds', fontsize=12)
+                ax.set_xlabel('Question', fontsize=12)
+                ax.legend(loc='upper right')
+                ax.grid(axis='y', alpha=0.3)
+                
+                # Annotate: seconds ON bars, percentages BELOW bars
+                max_total = stack_totals.max() if len(stack_totals) > 0 else 1.0
+                for i_bar in range(len(ind)):
+                    q_val = question_times[i_bar]
+                    c_val = correct_times[i_bar]
+                    i_val = incorrect_times[i_bar]
+                    total_h = stack_totals[i_bar]
+                    
+                    # Annotate seconds on bars (only if visible)
+                    if q_val > 1.0:  # Question segment
+                        ax.text(i_bar, q_val/2, f'{int(round(q_val))}s', 
+                               ha='center', va='center', fontsize=9, 
+                               color='white', fontweight='bold')
+                    
+                    if c_val > 1.0:  # Correct answer segment
+                        ax.text(i_bar, q_val + c_val/2, f'{int(round(c_val))}s', 
+                               ha='center', va='center', fontsize=9, 
+                               color='white', fontweight='bold')
+                    
+                    if i_val > 1.0:  # Incorrect answers segment
+                        ax.text(i_bar, q_val + c_val + i_val/2, f'{int(round(i_val))}s', 
+                               ha='center', va='center', fontsize=9, 
+                               color='white', fontweight='bold')
+                    
+                    # Percentages below bar
+                    if total_h > 0:
+                        q_pct = (q_val / total_h * 100)
+                        c_pct = (c_val / total_h * 100)
+                        i_pct = (i_val / total_h * 100)
+                        pct_text = f'Q:{q_pct:.0f}% C:{c_pct:.0f}% I:{i_pct:.0f}%'
+                        ax.text(i_bar, -0.03 * max_total, pct_text, 
+                               ha='center', va='top', fontsize=7, color='black')
+                
                 plt.tight_layout()
                 sec_path = os.path.join(p_dir, 'cumulative_time_seconds.png')
-                fig.savefig(sec_path)
+                fig.savefig(sec_path, dpi=150)
                 plt.close(fig)
             except Exception as e:
-                print(f"Could not create seconds bar chart for {pid}: {e}")
+                print(f"Could not create seconds stacked bar chart for {pid}: {e}")
+                import traceback
+                traceback.print_exc()
 
-            # Percent bar chart
+            # Percent bar chart - STACKED
             try:
-                fig, ax = plt.subplots(figsize=(12, 6))
-                bars = sns.barplot(x=q_labels, y=pct.values, color='tab:green', ax=ax)
+                fig, ax = plt.subplots(figsize=(14, 7))
+                ind = np.arange(len(questions))
+                
+                # Calculate percentages for stacked display
+                q_pct = (question_times / stack_totals * 100) if len(stack_totals) > 0 else np.zeros(len(questions))
+                c_pct = (correct_times / stack_totals * 100) if len(stack_totals) > 0 else np.zeros(len(questions))
+                i_pct = (incorrect_times / stack_totals * 100) if len(stack_totals) > 0 else np.zeros(len(questions))
+                
+                # Handle division by zero
+                q_pct = np.nan_to_num(q_pct, 0)
+                c_pct = np.nan_to_num(c_pct, 0)
+                i_pct = np.nan_to_num(i_pct, 0)
+                
+                # Create stacked bars
+                p1 = ax.bar(ind, q_pct, color='#1f77b4', label='Question')
+                p2 = ax.bar(ind, c_pct, bottom=q_pct, color='#2ca02c', label='Correct Answer')
+                p3 = ax.bar(ind, i_pct, bottom=q_pct + c_pct, color='#d62728', label='Incorrect Answers')
+                
+                ax.set_xticks(ind)
                 ax.set_xticklabels(q_labels, rotation=45, ha='right')
-                ax.set_title(f'Participant {pid} — Time per Question (%)')
-                ax.set_ylabel('Percent of Total Time (%)')
-                ax.set_xlabel('Question')
-                # Annotate percent bars with integer percents; place tiny segments' labels above
-                max_pct = pct.max() if len(pct) > 0 else 100.0
-                for bar, val in zip(bars.patches, pct.values):
-                    try:
-                        h = bar.get_height()
-                        if np.isnan(val):
-                            continue
-                        txt = f"{int(round(val))}%"
-                        if max_pct > 0 and h < max_pct * 0.03:
-                            ax.text(bar.get_x() + bar.get_width()/2, h + 1.0, txt, ha='center', va='bottom', fontsize=9)
-                        else:
-                            ax.text(bar.get_x() + bar.get_width()/2, h/2, txt, ha='center', va='center', fontsize=9, color='white')
-                    except Exception:
-                        pass
+                ax.set_title(f'Participant {pid} — Time per Question (%) - AOI Breakdown', fontsize=14, fontweight='bold')
+                ax.set_ylabel('Percent of Question Time (%)', fontsize=12)
+                ax.set_xlabel('Question', fontsize=12)
+                ax.legend(loc='upper right')
+                ax.grid(axis='y', alpha=0.3)
+                ax.set_ylim(0, 100)
+                
+                # Annotate each segment with percentage ON bars
+                for i_bar in range(len(ind)):
+                    q_val = q_pct[i_bar]
+                    c_val = c_pct[i_bar]
+                    i_val = i_pct[i_bar]
+                    
+                    # Display percentage values ON bars (white text)
+                    if q_val > 3:  # Only show if segment > 3%
+                        ax.text(i_bar, q_val/2, f'{q_val:.0f}%', 
+                               ha='center', va='center', color='white', fontsize=9, fontweight='bold')
+                    if c_val > 3:
+                        ax.text(i_bar, q_val + c_val/2, f'{c_val:.0f}%', 
+                               ha='center', va='center', color='white', fontsize=9, fontweight='bold')
+                    if i_val > 3:
+                        ax.text(i_bar, q_val + c_val + i_val/2, f'{i_val:.0f}%', 
+                               ha='center', va='center', color='white', fontsize=9, fontweight='bold')
+                
                 plt.tight_layout()
                 pct_path = os.path.join(p_dir, 'cumulative_time_percent.png')
-                fig.savefig(pct_path)
+                fig.savefig(pct_path, dpi=150)
                 plt.close(fig)
             except Exception as e:
-                print(f"Could not create percent bar chart for {pid}: {e}")
+                print(f"Could not create percent stacked bar chart for {pid}: {e}")
+                import traceback
+                traceback.print_exc()
 
             # Label distribution
             try:
@@ -2238,6 +2526,15 @@ def aggregate_aoi_features(df, viz_dir):
             agg_cols[c] = 'sum'
 
         grouped = df.groupby('question_id', sort=False).agg(agg_cols).reset_index()
+        
+        # Sort by numeric question ID
+        try:
+            grouped['q_sort'] = grouped['question_id'].apply(lambda x: _extract_numeric_suffix(x))
+            grouped.sort_values('q_sort', inplace=True)
+            grouped.drop('q_sort', axis=1, inplace=True)
+        except Exception:
+            grouped.sort_values('question_id', inplace=True)
+        
         # total time across all questions
         total_time = grouped['t_ij'].sum() if 't_ij' in grouped.columns else 0.0
         grouped['pct_time'] = (grouped['t_ij'] / total_time * 100) if total_time > 0 else 0.0
@@ -2267,6 +2564,16 @@ def visualize_aggregate_charts(agg_df, viz_dir, correct_answers=None):
             return
 
         os.makedirs(viz_dir, exist_ok=True)
+        
+        # Ensure data is sorted by numeric question ID
+        try:
+            agg_df = agg_df.copy()
+            agg_df['q_sort'] = agg_df['question_id'].apply(lambda x: _extract_numeric_suffix(x))
+            agg_df.sort_values('q_sort', inplace=True)
+            agg_df.drop('q_sort', axis=1, inplace=True)
+        except Exception:
+            agg_df.sort_values('question_id', inplace=True)
+        
         # Standardize question labels
         qids = agg_df['question_id'].astype(str).tolist()
 
@@ -2446,74 +2753,99 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("    <link rel=\"stylesheet\" href=\"https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css\">")
     html_content.append("    <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>")
     html_content.append("    <style>")
-    html_content.append("        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; background-color: #f4f4f4; color: #333; }")
-    html_content.append("        .container { background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }")
-    html_content.append("        h1, h2, h3 { color: #0056b3; }")
-    html_content.append("        img { max-width: 100%; height: auto; display: block; margin: 15px 0; border: 1px solid #ddd; border-radius: 4px; cursor: zoom-in; }")
-    html_content.append("        table { width: 100%; border-collapse: collapse; margin: 15px 0; }")
-    html_content.append("        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }")
-    html_content.append("        th { background-color: #f2f2f2; }")
-    html_content.append("        .section-divider { border-top: 2px solid #eee; margin: 30px 0; }")
+    html_content.append("        body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.7; margin: 0; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #333; }")
+    html_content.append("        .container { background-color: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); max-width: 1400px; margin: 0 auto; }")
+    html_content.append("        h1 { color: #764ba2; font-size: 2.5em; margin-bottom: 10px; border-bottom: 3px solid #667eea; padding-bottom: 10px; }")
+    html_content.append("        h2 { color: #667eea; font-size: 2em; margin-top: 40px; margin-bottom: 15px; border-left: 5px solid #764ba2; padding-left: 15px; }")
+    html_content.append("        h3 { color: #444; font-size: 1.5em; margin-top: 30px; margin-bottom: 12px; }")
+    html_content.append("        h4 { color: #555; font-size: 1.2em; margin-top: 25px; margin-bottom: 10px; }")
+    html_content.append("        h5 { color: #666; font-size: 1.1em; margin-top: 20px; margin-bottom: 8px; font-style: italic; }")
+    html_content.append("        h6 { color: #777; font-size: 1em; margin-top: 15px; margin-bottom: 8px; }")
+    html_content.append("        p { margin: 10px 0; text-align: justify; }")
+    html_content.append("        ul, ol { margin: 10px 0; padding-left: 30px; }")
+    html_content.append("        li { margin: 8px 0; }")
+    html_content.append("        img { max-width: 100%; height: auto; display: block; margin: 20px auto; border: 2px solid #667eea; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); cursor: zoom-in; transition: transform 0.3s; }")
+    html_content.append("        img:hover { transform: scale(1.02); box-shadow: 0 8px 16px rgba(0,0,0,0.2); }")
+    html_content.append("        table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 0.95em; }")
+    html_content.append("        th, td { border: 1px solid #ddd; padding: 12px 10px; text-align: left; }")
+    html_content.append("        th { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; font-weight: bold; text-align: center; }")
+    html_content.append("        tr:nth-child(even) { background-color: #f9f9f9; }")
+    html_content.append("        tr:hover { background-color: #f1f1f1; }")
+    html_content.append("        .section-divider { border-top: 3px solid #667eea; margin: 50px 0; opacity: 0.3; }")
+    html_content.append("        code { background-color: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; color: #d63384; }")
+    html_content.append("        strong { color: #764ba2; }")
+    html_content.append("        .info-box { background-color: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; margin: 20px 0; border-radius: 5px; }")
+    html_content.append("        .warning-box { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; border-radius: 5px; }")
+    html_content.append("        .success-box { background-color: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 5px; }")
     html_content.append("        /* Modal for image zoom */")
     html_content.append("        .modal {")
-    html_content.append("            display: none; /* Hidden by default */")
-    html_content.append("            position: fixed; /* Stay in place */")
-    html_content.append("            z-index: 1000; /* Sit on top */")
-    html_content.append("            padding-top: 50px; /* Location of the box */")
+    html_content.append("            display: none; ")
+    html_content.append("            position: fixed; ")
+    html_content.append("            z-index: 10000; ")
+    html_content.append("            padding-top: 50px; ")
     html_content.append("            left: 0;")
     html_content.append("            top: 0;")
-    html_content.append("            width: 100%; /* Full width */")
-    html_content.append("            height: 100%; /* Full height */")
-    html_content.append("            overflow: auto; /* Enable scroll if needed */")
-    html_content.append("            background-color: rgb(0,0,0); /* Fallback color */")
-    html_content.append("            background-color: rgba(0,0,0,0.9); /* Black w/ opacity */")
+    html_content.append("            width: 100%; ")
+    html_content.append("            height: 100%; ")
+    html_content.append("            overflow: auto; ")
+    html_content.append("            background-color: rgba(0,0,0,0.95); ")
     html_content.append("        }")
     html_content.append("        .modal-content {")
     html_content.append("            margin: auto;")
     html_content.append("            display: block;")
-    html_content.append("            width: 80%;")
-    html_content.append("            max-width: 1200px;")
+    html_content.append("            width: 90%;")
+    html_content.append("            max-width: 1400px;")
+    html_content.append("            border: 3px solid #667eea;")
+    html_content.append("            border-radius: 8px;")
     html_content.append("        }")
     html_content.append("        .modal-content, #caption {")
     html_content.append("            animation-name: zoom;")
-    html_content.append("            animation-duration: 0.6s;")
+    html_content.append("            animation-duration: 0.4s;")
     html_content.append("        }")
     html_content.append("        @keyframes zoom {")
-    html_content.append("            from {transform:scale(0)}")
-    html_content.append("            to {transform:scale(1)}")
+    html_content.append("            from {transform:scale(0); opacity: 0;}")
+    html_content.append("            to {transform:scale(1); opacity: 1;}")
     html_content.append("        }")
     html_content.append("        .close {")
     html_content.append("            position: absolute;")
-    html_content.append("            top: 15px;")
-    html_content.append("            right: 35px;")
-    html_content.append("            color: #f1f1f1;")
-    html_content.append("            font-size: 40px;")
+    html_content.append("            top: 20px;")
+    html_content.append("            right: 45px;")
+    html_content.append("            color: #ffffff;")
+    html_content.append("            font-size: 50px;")
     html_content.append("            font-weight: bold;")
     html_content.append("            transition: 0.3s;")
+    html_content.append("            cursor: pointer;")
+    html_content.append("            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);")
     html_content.append("        }")
     html_content.append("        .close:hover,")
     html_content.append("        .close:focus {")
-    html_content.append("            color: #bbb;")
-    html_content.append("            text-decoration: none;")
-    html_content.append("            cursor: pointer;")
+    html_content.append("            color: #667eea;")
+    html_content.append("            transform: scale(1.2);")
     html_content.append("        }")
     html_content.append("        #caption {")
-    html_content.append("            margin: auto;")
+    html_content.append("            margin: 20px auto;")
     html_content.append("            display: block;")
     html_content.append("            width: 80%;")
     html_content.append("            max-width: 700px;")
     html_content.append("            text-align: center;")
-    html_content.append("            color: #ccc;")
-    html_content.append("            padding: 10px 0;")
-    html_content.append("            height: 150px;")
+    html_content.append("            color: #ffffff;")
+    html_content.append("            font-size: 1.2em;")
+    html_content.append("            padding: 15px;")
+    html_content.append("            background-color: rgba(0,0,0,0.7);")
+    html_content.append("            border-radius: 8px;")
     html_content.append("        }")
     html_content.append("    </style>")
     html_content.append("</head>")
     html_content.append("<body>")
     html_content.append("    <div class=\"container\">")
-    html_content.append("        <h1 class=\"mb-4\">Data Mining Pipeline Report</h1>")
-    html_content.append("        <p>This report presents a comprehensive analysis of eye-tracking data, processed through a multi-stage pipeline designed to extract meaningful behavioral insights. The pipeline systematically cleans raw gaze data, identifies outliers, labels participant responses, and engineers features related to Areas of Interest (AOIs) and cognitive phases. The objective is to provide a robust framework for understanding user interaction patterns in response to presented stimuli, suitable for academic research and publication.</p>")
-    html_content.append("        <p>The analysis covers data from a total of <strong>{n_participants} unique participants</strong> and <strong>{n_questions} unique questions</strong>. Each stage of the pipeline is detailed below, including the methodologies applied, key variables computed, and the rationale behind the processing steps.</p>")
+    html_content.append("        <h1 class=\"mb-4\">📊 Eye-Tracking Data Mining Pipeline Report</h1>")
+    html_content.append("        <div class=\"info-box\">")
+    html_content.append("            <p><strong>🎯 Report Overview:</strong> This comprehensive report presents a detailed analysis of eye-tracking data collected during an interactive assessment. The data has been processed through a sophisticated multi-stage pipeline designed to extract meaningful behavioral and cognitive insights from gaze patterns.</p>")
+    html_content.append("            <p>The pipeline systematically: (1) cleans raw gaze data and removes invalid samples, (2) identifies statistical outliers in response times, (3) classifies participant performance into behavioral categories, and (4) engineers advanced features related to Areas of Interest (AOIs) and cognitive processing phases.</p>")
+    html_content.append("        </div>")
+    html_content.append("        <div class=\"success-box\">")
+    html_content.append(f"            <p><strong>📈 Dataset Summary:</strong> This analysis covers data from <strong>{n_participants} unique participants</strong> across <strong>{n_questions} unique questions</strong>. Each stage of the pipeline is meticulously documented below, including methodologies, computed variables, and the scientific rationale behind processing decisions.</p>")
+    html_content.append("        </div>")
 
     html_content.append("        <h2 class=\"mt-5\">Overview</h2>")
     html_content.append(f"        <p><strong>Unique participants:</strong> {n_participants}</p>")
@@ -2760,21 +3092,31 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     html_content.append("        <div class=\"section-divider\"></div>")
 
     # Add all generated images to the report
-    html_content.append("        <h2 class=\"mt-5\">Visualizations</h2>")
+    html_content.append("        <h2 class=\"mt-5\">📈 Visualizations & Analysis Results</h2>")
+    html_content.append("        <p>This section presents comprehensive visual analytics generated from the processed data. All charts are interactive—click on any image to view it in full-screen mode. The visualizations are organized hierarchically: (1) Project-level aggregate summaries, (2) AOI (Area of Interest) analysis, (3) Per-participant detailed breakdowns, and (4) Gaze heatmaps and scatterplots.</p>")
 
     # AOI Summary per Question (New Plot)
     aoi_summary_path = os.path.join(viz_dir, 'aoi_summary_per_question.png')
     if os.path.exists(aoi_summary_path):
         aoi_summary_rel_path = os.path.relpath(aoi_summary_path, os.path.dirname(report_path)).replace('\\', '/')
-        html_content.append("        <h3 class=\"mt-4\">AOI Time Summary per Question</h3>")
+        html_content.append("        <h3 class=\"mt-4\">🎯 AOI Time Distribution per Question</h3>")
+        html_content.append("        <div class=\"info-box\">")
+        html_content.append("            <p><strong>Description:</strong> This dual-panel visualization shows how participants allocated their gaze time across three key Areas of Interest for each question:</p>")
+        html_content.append("            <ul>")
+        html_content.append("                <li><strong style='color:#87CEEB;'>Question (Blue):</strong> Time spent reading and comprehending the question text</li>")
+        html_content.append("                <li><strong style='color:#3CB371;'>Correct Answer (Green):</strong> Time spent viewing the correct answer option</li>")
+        html_content.append("                <li><strong style='color:#F08080;'>Other Answers (Red):</strong> Combined time spent viewing incorrect answer options</li>")
+        html_content.append("            </ul>")
+        html_content.append("            <p>The <strong>upper panel</strong> displays absolute time (in seconds) as stacked bars, while the <strong>lower panel</strong> shows relative attention distribution (as percentages). Questions are sorted numerically (Q1, Q2, ..., Q15) for easy comparison.</p>")
+        html_content.append("        </div>")
         html_content.append(f"        <img src=\"{aoi_summary_rel_path}\" alt=\"AOI Summary per Question\" class=\"img-fluid\" onclick=\"openModal(this)\">")
         # If a CSV summary exists, include it as an HTML table below the image
         csv_summary_path = os.path.join(viz_dir, 'avg_aoi_per_question.csv')
         if os.path.exists(csv_summary_path):
             try:
-                # Read the full CSV to embed in the report
                 summary_table_df = pd.read_csv(csv_summary_path)
-                html_content.append("        <h4 class=\"mt-3\">Numeric Summary (per question)</h4>")
+                html_content.append("        <h4 class=\"mt-3\">📋 Detailed Numeric Summary (CSV Export)</h4>")
+                html_content.append("        <p>The table below provides precise numeric values for the visualization above, including both absolute durations (seconds) and relative percentages for each AOI category per question.</p>")
                 html_content.append(summary_table_df.to_html(index=False, classes='table table-striped table-bordered'))
             except Exception as e:
                 print(f"Could not read or embed AOI summary CSV: {e}")
@@ -2786,23 +3128,32 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     agg_csv = os.path.join(viz_dir, 'avg_aoi_per_question.csv')
 
     if os.path.exists(agg_sec) or os.path.exists(agg_pct) or os.path.exists(agg_stack):
-        html_content.append("        <h3 class=\"mt-4\">Aggregate Cumulative Charts (All Participants)</h3>")
-        html_content.append("        <p>Project-level cumulative charts aggregated across all participants. These summarize total and relative attention per question.</p>")
+        html_content.append("        <h3 class=\"mt-4\">🌐 Aggregate Project-Level Cumulative Charts</h3>")
+        html_content.append("        <div class=\"info-box\">")
+        html_content.append("            <p><strong>Overview:</strong> These three charts provide a bird's-eye view of attention patterns aggregated across <strong>all participants</strong> for each question. They reveal which questions demanded more cognitive resources and how attention was distributed across different screen regions.</p>")
+        html_content.append("            <ul>")
+        html_content.append("                <li><strong>Left Chart (Seconds):</strong> Shows total interaction time per question in absolute seconds, with stacked segments representing time spent on Question text (blue), Correct answer (green), and Other answers (red).</li>")
+        html_content.append("                <li><strong>Middle Chart (Percent):</strong> Displays each question's contribution to total interaction time across the entire assessment as a percentage.</li>")
+        html_content.append("                <li><strong>Right Chart (AOI Breakdown):</strong> Provides a detailed stacked view of how time was allocated to different AOI categories for each question.</li>")
+        html_content.append("            </ul>")
+        html_content.append("            <p><strong>💡 Interpretation Tip:</strong> Questions with disproportionately high total time or unusual AOI distributions may indicate items that were particularly challenging or ambiguously worded.</p>")
+        html_content.append("        </div>")
         html_content.append("        <div style=\"display:flex;flex-wrap:wrap;gap:20px;margin-bottom:20px;\">")
         if os.path.exists(agg_sec):
             rel = os.path.relpath(agg_sec, os.path.dirname(report_path)).replace('\\', '/')
-            html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{rel}\" alt=\"Aggregate time seconds\" class=\"img-fluid\"></div>")
+            html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{rel}\" alt=\"Aggregate time per question (seconds) - stacked by AOI\" class=\"img-fluid\" onclick=\"openModal(this)\"></div>")
         if os.path.exists(agg_pct):
             rel = os.path.relpath(agg_pct, os.path.dirname(report_path)).replace('\\', '/')
-            html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{rel}\" alt=\"Aggregate time percent\" class=\"img-fluid\"></div>")
+            html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{rel}\" alt=\"Aggregate time per question (percent of total)\" class=\"img-fluid\" onclick=\"openModal(this)\"></div>")
         if os.path.exists(agg_stack):
             rel = os.path.relpath(agg_stack, os.path.dirname(report_path)).replace('\\', '/')
-            html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{rel}\" alt=\"Aggregate AOI breakdown\" class=\"img-fluid\"></div>")
+            html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{rel}\" alt=\"Aggregate AOI breakdown per question\" class=\"img-fluid\" onclick=\"openModal(this)\"></div>")
         html_content.append("        </div>")
         if os.path.exists(agg_csv):
             try:
                 agg_df = pd.read_csv(agg_csv)
-                html_content.append("        <h4 class=\"mt-3\">Aggregate Numeric Summary (per question)</h4>")
+                html_content.append("        <h4 class=\"mt-3\">📋 Aggregate Numeric Data Table</h4>")
+                html_content.append("        <p>This table contains the raw numeric values underlying the aggregate charts, facilitating further statistical analysis or export for publication.</p>")
                 html_content.append(agg_df.head(100).to_html(index=False, classes='table table-striped table-bordered'))
             except Exception:
                 pass
@@ -2831,32 +3182,64 @@ def write_html_report(report_path, stats_all, stats_c, labeled_df, final_df, sum
     aoi_l_path = os.path.join(viz_dir, 'aoi_time_per_label.png')
     if os.path.exists(aoi_l_path):
         aoi_l_rel_path = os.path.relpath(aoi_l_path, os.path.dirname(report_path)).replace('\\', '/')
-        html_content.append("        <h3 class=\"mt-4\">AOI Time per Label</h3>")
-        html_content.append(f"        <img src=\"{aoi_l_rel_path}\" alt=\"{aoi_l_path}\" class=\"img-fluid\">")
+        html_content.append("        <h3 class=\"mt-4\">🏷️ AOI Time Distribution by Behavioral Label (UP vs. NP)</h3>")
+        html_content.append("        <div class=\"info-box\">")
+        html_content.append("            <p><strong>Purpose:</strong> This grouped bar chart compares attention allocation patterns between two key behavioral categories:</p>")
+        html_content.append("            <ul>")
+        html_content.append("                <li><strong>NP (Normal Performance):</strong> Participants who answered correctly within a statistically normal time frame.</li>")
+        html_content.append("                <li><strong>UP (Unusual Performance):</strong> Participants who either answered incorrectly OR answered correctly but took unusually long.</li>")
+        html_content.append("            </ul>")
+        html_content.append("            <p><strong>📊 What the Chart Shows:</strong> For each behavioral label (UP/NP), three bars display average time spent on:</p>")
+        html_content.append("            <ul>")
+        html_content.append("                <li><strong style='color:#1f77b4;'>Question:</strong> Reading and understanding the question text</li>")
+        html_content.append("                <li><strong style='color:#2ca02c;'>Correct Answer:</strong> Viewing the correct answer option</li>")
+        html_content.append("                <li><strong style='color:#d62728;'>Incorrect Answers:</strong> Combined time viewing all incorrect options</li>")
+        html_content.append("            </ul>")
+        html_content.append("            <p>Each bar is annotated with both <strong>absolute time (seconds)</strong> and <strong>percentage of total question time</strong>, enabling both absolute and relative comparisons.</p>")
+        html_content.append("            <p><strong>💡 Insight:</strong> This visualization helps identify whether unusual performance correlates with distinct gaze patterns (e.g., less time on the question, more time on incorrect options).</p>")
+        html_content.append("        </div>")
+        html_content.append(f"        <img src=\"{aoi_l_rel_path}\" alt=\"AOI Time Distribution by Behavioral Label (UP vs NP)\" class=\"img-fluid\" onclick=\"openModal(this)\">")
 
     # Per-participant cumulative charts (seconds, percent, label distribution)
     participant_bars_dir = os.path.join(viz_dir, 'participant_bars')
     if os.path.exists(participant_bars_dir):
-        html_content.append("        <h3 class=\"mt-4\">Per-participant Cumulative Time & Label Plots</h3>")
+        html_content.append("        <h3 class=\"mt-4\">👤 Per-Participant Cumulative Analysis</h3>")
+        html_content.append("        <div class=\"info-box\">")
+        html_content.append("            <p><strong>Individual Performance Profiles:</strong> This section provides detailed performance analytics for each participant, enabling identification of individual patterns and anomalies.</p>")
+        html_content.append("            <p><strong>For each participant, three key visualizations are generated:</strong></p>")
+        html_content.append("            <ol>")
+        html_content.append("                <li><strong>Cumulative Time (Seconds) - Stacked AOI Breakdown:</strong> Shows absolute time spent per question, with each bar divided into three color-coded segments:")
+        html_content.append("                    <ul>")
+        html_content.append("                        <li><span style='color:#1f77b4;'>●</span> <strong>Blue (Question):</strong> Time reading the question</li>")
+        html_content.append("                        <li><span style='color:#2ca02c;'>●</span> <strong>Green (Correct Answer):</strong> Time on the correct option</li>")
+        html_content.append("                        <li><span style='color:#d62728;'>●</span> <strong>Red (Incorrect Answers):</strong> Combined time on wrong options</li>")
+        html_content.append("                    </ul>")
+        html_content.append("                    <p style='margin-left:20px;'><em>Each segment shows both seconds and percentage of question time.</em></p>")
+        html_content.append("                </li>")
+        html_content.append("                <li><strong>Cumulative Time (Percentage) - Stacked AOI Breakdown:</strong> Same structure as above, but normalized to show relative attention distribution (each bar sums to 100%).</li>")
+        html_content.append("                <li><strong>Label Distribution:</strong> A simple bar chart showing the count of each behavioral label (NP, UP, INVALID, etc.) assigned to this participant's responses.</li>")
+        html_content.append("            </ol>")
+        html_content.append("            <p><strong>📌 Navigation Tip:</strong> Click any chart to view in full-screen mode. Questions are sorted numerically (Q1-Q15) for consistent cross-participant comparison.</p>")
+        html_content.append("        </div>")
         try:
             p_folders = sorted([d for d in os.listdir(participant_bars_dir) if os.path.isdir(os.path.join(participant_bars_dir, d))])
             for p_folder in p_folders:
                 p_dir = os.path.join(participant_bars_dir, p_folder)
-                html_content.append(f"        <h4>{display_participant(p_folder)}</h4>")
+                html_content.append(f"        <h4 style='color:#667eea; border-bottom:2px solid #764ba2; padding-bottom:5px;'>🔹 {display_participant(p_folder)}</h4>")
                 sec_path = os.path.join(p_dir, 'cumulative_time_seconds.png')
                 pct_path = os.path.join(p_dir, 'cumulative_time_percent.png')
                 lab_path = os.path.join(p_dir, 'label_distribution.png')
 
-                html_content.append("        <div style=\"display:flex;flex-wrap:wrap;gap:20px;margin-bottom:20px;\">")
+                html_content.append("        <div style=\"display:flex;flex-wrap:wrap;gap:20px;margin-bottom:30px;\">")
                 if os.path.exists(sec_path):
                     sec_rel = os.path.relpath(sec_path, os.path.dirname(report_path)).replace('\\', '/')
-                    html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{sec_rel}\" alt=\"Time seconds {p_folder}\" class=\"img-fluid\"></div>")
+                    html_content.append(f"            <div style=\"flex:1;min-width:350px;\"><img src=\"{sec_rel}\" alt=\"{display_participant(p_folder)} - Time per question (seconds)\" class=\"img-fluid\" onclick=\"openModal(this)\" title=\"Click to enlarge\"></div>")
                 if os.path.exists(pct_path):
                     pct_rel = os.path.relpath(pct_path, os.path.dirname(report_path)).replace('\\', '/')
-                    html_content.append(f"            <div style=\"flex:1;min-width:300px;\"><img src=\"{pct_rel}\" alt=\"Time percent {p_folder}\" class=\"img-fluid\"></div>")
+                    html_content.append(f"            <div style=\"flex:1;min-width:350px;\"><img src=\"{pct_rel}\" alt=\"{display_participant(p_folder)} - Time per question (percent)\" class=\"img-fluid\" onclick=\"openModal(this)\" title=\"Click to enlarge\"></div>")
                 if os.path.exists(lab_path):
                     lab_rel = os.path.relpath(lab_path, os.path.dirname(report_path)).replace('\\', '/')
-                    html_content.append(f"            <div style=\"flex:0 0 320px;\"><img src=\"{lab_rel}\" alt=\"Label distribution {p_folder}\" class=\"img-fluid\"></div>")
+                    html_content.append(f"            <div style=\"flex:0 0 380px;\"><img src=\"{lab_rel}\" alt=\"{display_participant(p_folder)} - Label distribution\" class=\"img-fluid\" onclick=\"openModal(this)\" title=\"Click to enlarge\"></div>")
                 html_content.append("        </div>")
         except Exception:
             html_content.append("        <p><em>Could not list per-participant charts.</em></p>")
@@ -3528,12 +3911,37 @@ def main():
                     final_df = None
                     try:
                         final_df = engineer_features(raw_df, labeled_df.copy())
-                        # If engineering succeeded, also update labeled_df copy with AOI wide columns where available
+                        # If engineering succeeded, merge final_df back into labeled_df so AOI-wide columns are available for visuals.
+                        # Use a safe left-join on participant_id & question_id and do not drop the join keys from final_df.
                         if final_df is not None and not final_df.empty:
-                            # Merge back AOI columns into a working labeled_df_for_viz to preserve original labeled_df
-                            labeled_df_for_viz = pd.merge(labeled_df, final_df.drop(columns=[c for c in ['participant_id','question_id'] if c in final_df.columns], errors='ignore'), on=['participant_id','question_id'], how='left')
+                            try:
+                                # Only merge columns that don't already exist in labeled_df (except join keys)
+                                existing_cols = set(labeled_df.columns)
+                                new_cols_from_final = [c for c in final_df.columns if c not in existing_cols or c in ['participant_id', 'question_id']]
+                                labeled_df_for_viz = pd.merge(labeled_df, final_df[new_cols_from_final], on=['participant_id', 'question_id'], how='left')
+                            except Exception as _merr:
+                                # Fallback: try standard merge
+                                try:
+                                    labeled_df_for_viz = pd.merge(labeled_df, final_df, on=['participant_id', 'question_id'], how='left', suffixes=('', '_final'))
+                                except Exception:
+                                    labeled_df_for_viz = labeled_df
                         else:
                             labeled_df_for_viz = labeled_df
+
+                        # Debug/log: list columns that are available after engineering so we can see if AOI_* cols were created
+                        try:
+                            cols_final = list(final_df.columns) if (final_df is not None) else []
+                            cols_viz = list(labeled_df_for_viz.columns)
+                            msg = f"[DEBUG] final_df columns: {cols_final}"
+                            print(msg)
+                            if progress_queue:
+                                progress_queue.put(("log", msg))
+                            msg2 = f"[DEBUG] labeled_df_for_viz columns: {cols_viz}"
+                            print(msg2)
+                            if progress_queue:
+                                progress_queue.put(("log", msg2))
+                        except Exception:
+                            pass
                     except Exception as e_eng:
                         labeled_df_for_viz = labeled_df
                         final_df = None
@@ -3556,7 +3964,7 @@ def main():
                     if selected_plots.get('aoi_per_question'):
                         visualize_aoi_time_per_question(labeled_df_for_viz, viz_dir, question_texts, progress_queue, cancel_event=cancel_event)
                     if selected_plots.get('aoi_per_label'):
-                        visualize_aoi_time_per_label(labeled_df_for_viz, viz_dir, progress_queue, cancel_event=cancel_event)
+                        visualize_aoi_time_per_label(labeled_df_for_viz, viz_dir, progress_queue, cancel_event=cancel_event, correct_answers=correct_answers)
 
                     # Per-participant cumulative charts (seconds + percent + label distribution)
                     if selected_plots.get('summary_plots'):

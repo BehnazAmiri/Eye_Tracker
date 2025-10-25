@@ -1,0 +1,289 @@
+--- Script execution started ---
+Working directory fixed to: E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker
+--- Checking main entry point ---
+[launcher] entering __main__ block...
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2021: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2051: UserWarning: set_ticklabels() should only be used with a fixed number of ticks, i.e. after set_ticks() or using a FixedLocator.
+  ax.set_xticklabels(q_labels, rotation=45, ha='right')
+E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\Datamining_Pipeline.py:2081: FutureWarning: 
+
+Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `x` variable to `hue` and set `legend=False` for the same effect.
+
+  bars = sns.barplot(x=lab_counts.index.astype(str), y=lab_counts.values, palette='magma', ax=ax)
+Identified 4 instances of invalidly fast answers.
+[Feature Engineering] Assigning AOIs and extracting phases...
+--- AOI/Phase extraction done. Phase file: E:\MasterThesis\Final\ExperimentProject_Newjson__ActualTest30\Eye_tracker\reports\phases_per_participant.csv
+--- AOI column created dynamically. Unique AOIs: ['Other' 'Choice_B' 'Choice_D' 'Choice_A' 'Question' 'Choice_C' 'Timer'
+ 'Submit']
+Generating AOI summary per question bar chart...
+Warning: AOI columns ('Question', 'Choice_*') not found for 'AOI Summary' visualization.
+Generating AOI summary per question bar chart...
+Warning: AOI columns ('Question', 'Choice_*') not found for 'AOI Summary' visualization.
+Generating AOI time per question bar charts...
+Warning: No AOI columns found for 'AOI Time per Question' visualization.
+Generating AOI time per label bar charts...
+Warning: No AOI columns found for 'AOI Time per Label' visualization.
+Generating per-participant cumulative charts...
+[launcher] main() returned normally.
