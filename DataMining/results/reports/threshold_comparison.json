@@ -1,0 +1,203 @@
+{
+  "runs": [
+    {
+      "timestamp": "2026-02-06T23:05:03.428521",
+      "thresholds": {
+        "stage1_invalid_pct": 0.3,
+        "stage1_participant_exclusion": 0.5,
+        "ta_window_ms": 1000,
+        "ta_coverage": 0.85,
+        "stage3_percentile": 25
+      },
+      "stage1": {
+        "total_trials": 450,
+        "total_samples": 3564145,
+        "excluded_trials_trial_level": 14,
+        "excluded_trials_trial_level_pct": 3.111111111111111,
+        "excluded_trials_participant_level": 5,
+        "excluded_trials_participant_level_pct": 1.1111111111111112,
+        "excluded_trials": 19,
+        "excluded_trials_pct": 4.222222222222222,
+        "excluded_samples": 211901,
+        "excluded_participants": 1,
+        "good_trials_lost": 0,
+        "good_trials_lost_pct": 0.0,
+        "good_trials_lost_samples": 0,
+        "kept_trials": 431,
+        "kept_trials_pct": 95.77777777777777,
+        "kept_samples": 3352244
+      },
+      "stage2": {
+        "total_trials": 431,
+        "trials_with_ta": 387,
+        "trials_without_ta": 44,
+        "ta_detection_rate": 89.79118329466357,
+        "ta_mean": 0.02711413472868219,
+        "ta_median": 0.022794919999999365
+      },
+      "stage3": {
+        "total_trials": 431,
+        "total_valid": 385,
+        "not_random": 195,
+        "not_random_pct": 50.649350649350644,
+        "random": 190,
+        "random_pct": 49.35064935064935,
+        "invalid": 46,
+        "invalid_pct": 10.672853828306264,
+        "by_part": {
+          "No-Timer": {
+            "total": 145,
+            "not_random": 98,
+            "random": 33,
+            "invalid": 14
+          },
+          "Timer-Correct": {
+            "total": 143,
+            "not_random": 97,
+            "random": 32,
+            "invalid": 14
+          },
+          "Timer-No-Correct": {
+            "total": 143,
+            "not_random": 0,
+            "random": 125,
+            "invalid": 18
+          }
+        }
+      }
+    },
+    {
+      "timestamp": "2026-02-11T12:10:04.267304",
+      "thresholds": {
+        "stage1_invalid_pct": 0.3,
+        "stage1_participant_exclusion": 0.5,
+        "ta_window_ms": 1000,
+        "ta_coverage": 0.85,
+        "stage3_percentile": 25
+      },
+      "stage1": {
+        "total_trials": 450,
+        "total_samples": 3564145,
+        "excluded_trials_trial_level": 14,
+        "excluded_trials_trial_level_pct": 3.111111111111111,
+        "excluded_trials_participant_level": 5,
+        "excluded_trials_participant_level_pct": 1.1111111111111112,
+        "excluded_trials": 19,
+        "excluded_trials_pct": 4.222222222222222,
+        "excluded_samples": 211901,
+        "excluded_participants": 1,
+        "good_trials_lost": 0,
+        "good_trials_lost_pct": 0.0,
+        "good_trials_lost_samples": 0,
+        "kept_trials": 431,
+        "kept_trials_pct": 95.77777777777777,
+        "kept_samples": 3352244
+      },
+      "stage2": {
+        "total_trials": 431,
+        "trials_with_ta": 387,
+        "trials_without_ta": 44,
+        "ta_detection_rate": 89.79118329466357,
+        "ta_mean": 0.02711413472868219,
+        "ta_median": 0.022794919999999365
+      },
+      "stage3": {
+        "total_trials": 431,
+        "total_valid": 385,
+        "not_random": 195,
+        "not_random_pct": 50.649350649350644,
+        "random": 190,
+        "random_pct": 49.35064935064935,
+        "invalid": 46,
+        "invalid_pct": 10.672853828306264,
+        "by_part": {
+          "No-Timer": {
+            "total": 145,
+            "not_random": 98,
+            "random": 33,
+            "invalid": 14
+          },
+          "Timer-Correct": {
+            "total": 143,
+            "not_random": 97,
+            "random": 32,
+            "invalid": 14
+          },
+          "Timer-No-Correct": {
+            "total": 143,
+            "not_random": 0,
+            "random": 125,
+            "invalid": 18
+          }
+        }
+      }
+    },
+    {
+      "timestamp": "2026-02-12T22:53:50.890861",
+      "thresholds": {
+        "stage1_invalid_pct": 0.3,
+        "stage1_participant_exclusion": 0.5,
+        "ta_window_ms": 1000,
+        "ta_coverage": 0.85,
+        "stage3_percentile": 25
+      },
+      "stage1": {
+        "total_trials": 450,
+        "total_samples": 3564145,
+        "excluded_trials_trial_level": 14,
+        "excluded_trials_trial_level_pct": 3.111111111111111,
+        "excluded_trials_participant_level": 5,
+        "excluded_trials_participant_level_pct": 1.1111111111111112,
+        "excluded_trials": 19,
+        "excluded_trials_pct": 4.222222222222222,
+        "excluded_samples": 211901,
+        "excluded_participants": 1,
+        "good_trials_lost": 0,
+        "good_trials_lost_pct": 0.0,
+        "good_trials_lost_samples": 0,
+        "kept_trials": 431,
+        "kept_trials_pct": 95.77777777777777,
+        "kept_samples": 3352244
+      },
+      "stage2": {
+        "total_trials": 431,
+        "trials_with_ta": 387,
+        "trials_without_ta": 44,
+        "ta_detection_rate": 89.79118329466357,
+        "ta_mean": 0.02711413472868219,
+        "ta_median": 0.022794919999999365
+      },
+      "stage3": {
+        "total_trials": 431,
+        "total_valid": 385,
+        "not_random": 195,
+        "not_random_pct": 50.649350649350644,
+        "random": 190,
+        "random_pct": 49.35064935064935,
+        "invalid": 46,
+        "invalid_pct": 10.672853828306264,
+        "by_part": {
+          "No-Timer": {
+            "total": 145,
+            "not_random": 98,
+            "random": 33,
+            "invalid": 14
+          },
+          "Timer-Correct": {
+            "total": 143,
+            "not_random": 97,
+            "random": 32,
+            "invalid": 14
+          },
+          "Timer-No-Correct": {
+            "total": 143,
+            "not_random": 0,
+            "random": 125,
+            "invalid": 18
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {}
+}

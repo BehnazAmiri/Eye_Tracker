@@ -1,0 +1,547 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Mining Pipeline Report</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+        .stage {
+            background: white;
+            padding: 25px;
+            margin-bottom: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stage h2 {
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        .stage h3 {
+            color: #764ba2;
+            margin-top: 25px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+        .metric-box {
+            display: inline-block;
+            background: #f8f9fa;
+            padding: 15px 20px;
+            margin: 10px 10px 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .metric-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .metric-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+        .threshold-info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #2196F3;
+        }
+        .description {
+            color: #555;
+            line-height: 1.6;
+            margin: 15px 0;
+        }
+        ul {
+            color: #555;
+            line-height: 1.8;
+        }
+        .comparison-section {
+            background: #fff9e6;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 30px 0;
+            border: 2px solid #ffd700;
+        }
+        .comparison-section h2 {
+            color: #f57c00;
+            margin-top: 0;
+        }
+        .highlight {
+            background-color: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .footer {
+            text-align: center;
+            color: #666;
+            margin-top: 50px;
+            padding: 20px;
+            border-top: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Data Mining Pipeline Report</h1>
+        <p>Generated: 2026-02-12 22:53:50</p>
+    </div>
+
+    <div class="stage">
+        <h2>Stage 1: Identification of Invalid Gaze Samples</h2>
+        
+        <div class="description">
+            Each gaze sample is evaluated using the tracker's validity indicators:
+        </div>
+        
+        <ul>
+            <li><strong>If BPOGV = 1</strong>, the sample is considered valid and kept.</li>
+            <li><strong>If BPOGV = 0</strong>, the blink indicator (BKID) is checked:
+                <ul>
+                    <li>If BKID = 1, valid and kept.</li>
+                    <li>If BKID = 0, the sample is marked as invalid.</li>
+                </ul>
+            </li>
+        </ul>
+        
+        <h3>Trial-Level Exclusion</h3>
+        <div class="threshold-info">
+            <strong>Threshold:</strong> invalid &gt; 30% (or equivalently valid &lt; 70%)<br>
+            <strong>Action:</strong> If a trial exceeds the invalid percentage threshold, the entire trial is excluded from processing.<br>
+            <strong>Temporal Integrity:</strong> Individual samples are NOT deleted. Only entire trials are excluded.
+        </div>
+        
+        <h3>Participant-Level Exclusion</h3>
+        <div class="threshold-info">
+            <strong>Threshold:</strong> excluded trials &gt; 50%<br>
+            <strong>Action:</strong> If a participant has more than 50% of their trials excluded, 
+            the entire participant (all their trials, even good ones) is excluded from processing.
+        </div>
+        
+        <h3>Results:</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Count</th>
+                    <th>Percentage</th>
+                    <th>Samples</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Total Trials</strong></td>
+                    <td>450</td>
+                    <td>100.0%</td>
+                    <td>3,564,145</td>
+                </tr>
+                <tr>
+                    <td>Trials with &gt;30% corruption (trial-level exclusion)</td>
+                    <td>14</td>
+                    <td>3.1%</td>
+                    <td>-</td>
+                </tr>
+                <tr>
+                    <td>Participants with &gt;50% bad trials (fully excluded)</td>
+                    <td>1</td>
+                    <td>-</td>
+                    <td>-</td>
+                </tr>
+                <tr>
+                    <td style="padding-left: 30px;">↳ Additional trials lost due to participant removal</td>
+                    <td>5</td>
+                    <td>1.1%</td>
+                    <td>-</td>
+                </tr>
+                <tr style="background-color: #e8f5e9;">
+                    <td><strong>Total Excluded Trials</strong></td>
+                    <td><strong>19</strong></td>
+                    <td><strong>4.2%</strong></td>
+                    <td><strong>211,901</strong></td>
+                </tr>
+                <tr style="background-color: #c8e6c9;">
+                    <td><strong>Kept Trials (passed filters)</strong></td>
+                    <td><strong>431</strong></td>
+                    <td><strong>95.8%</strong></td>
+                    <td><strong>3,352,244</strong></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="stage">
+        <h2>Stage 2: AOI Assignment</h2>
+        
+        <div class="description">
+            <strong>ta (First Stable Fixation):</strong> The timestamp when the participant first fixates on any Answer AOI 
+            for a stable duration.
+        </div>
+        
+        <ul>
+            <li><strong>Time Window:</strong> 1000 milliseconds (1.0 second) of consecutive samples</li>
+            <li><strong>Sampling Rate:</strong> 150 Hz → 150 samples per second</li>
+            <li><strong>Coverage Threshold:</strong> At least 85% of samples within the 1.0-second window must remain in the target AOI</li>
+        </ul>
+        
+        <h3>Detection Process:</h3>
+        <ol>
+            <li>Start from trial beginning, scan samples sequentially</li>
+            <li>For each sample where gaze falls within target AOI (ta):
+                <ul>
+                    <li>Extract the next 1000ms (≈150 samples) as candidate window</li>
+                    <li>Check: Do ≥85% of samples in this window remain in the same AOI?</li>
+                    <li>If YES → Mark this timestamp as the stable fixation landmark</li>
+                    <li>If NO → Continue scanning to next sample</li>
+                </ul>
+            </li>
+            <li>First successful detection becomes the temporal landmark</li>
+        </ol>
+        
+        <h3>Results:</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Count</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Total Trials</strong></td>
+                    <td>431</td>
+                </tr>
+                <tr style="background-color: #e8f5e9;">
+                    <td>Trials with ta</td>
+                    <td>387 (89.8%)</td>
+                </tr>
+                <tr style="background-color: #ffebee;">
+                    <td>Trials without ta</td>
+                    <td>44 (10.2%)</td>
+                </tr>
+                <tr>
+                    <td><strong>Detection Success Rate</strong></td>
+                    <td><strong>387 (89.8%)</strong></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="stage">
+        <h2>Stage 3: Randomness Labeling</h2>
+        
+        <div class="description">
+            This stage classifies each trial as <span class="highlight">RANDOM</span> or <span class="highlight">NOT_RANDOM</span> 
+            based on time from first answer fixation (ta) to response (end of the trial).
+        </div>
+        
+        <h3>Classification Method:</h3>
+        <ul>
+            <li><strong>Timer-No-Correct:</strong> ALL trials classified as RANDOM (no threshold applied). 
+            These trials had timer pressure AND no correct answer available, making strategic decision-making impossible.</li>
+            <li><strong>No-Timer & Timer-Correct:</strong> Uses 25th percentile (P25) threshold calculated separately for each part:
+                <ul>
+                    <li><strong>NOT_RANDOM:</strong> Time from t_answer ≥ P25 → Strategic, deliberate decision-making</li>
+                    <li><strong>RANDOM:</strong> Time from t_answer &lt; P25 → Fast, impulsive response</li>
+                </ul>
+            </li>
+        </ul>
+        
+        <div class="threshold-info">
+            <strong>t_answer</strong> is the decision time after attention reaches the answers: 
+            it is computed as <strong>t_end − ta</strong>, where ta is the first stable fixation on the Answer Area 
+            and t_end is the last sample.
+        </div>
+        
+        <div class="description">
+            <ul>
+                <li>To avoid using an arbitrary threshold, we applied a <strong>data-driven approach</strong> based on 
+                the 25th percentile (P25) of response time.</li>
+                <li>P25 represents the fastest 25% of valid responses and is used to 
+                identify unusually quick, potentially impulsive answers.</li>
+                <li>Trials with response time below P25 are labeled as RANDOM, while longer responses 
+                are labeled as NOT_RANDOM, indicating more deliberate processing.</li>
+            </ul>
+        </div>
+        
+        <h3>Results:</h3>
+        <div class="metric-box">
+            <div class="metric-label">Total Trials</div>
+            <div class="metric-value">431</div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-label">Total Valid Trials</div>
+            <div class="metric-value">385</div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-label">NOT_RANDOM</div>
+            <div class="metric-value" style="color: #4CAF50;">195<br>
+            <small>(50.6% of valid | 45.2% of all)</small></div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-label">RANDOM</div>
+            <div class="metric-value" style="color: #FF9800;">190<br>
+            <small>(49.4% of valid | 44.1% of all)</small></div>
+        </div>
+        <div class="metric-box">
+            <div class="metric-label">Invalid</div>
+            <div class="metric-value" style="color: #F44336;">46<br>
+            <small>(10.7% of all)</small></div>
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Part</th>
+                    <th>NOT_RANDOM</th>
+                    <th>RANDOM</th>
+                    <th>Invalid</th>
+                    <th>Total</th>
+                    <th>NOT_RANDOM %</th>
+                    <th>RANDOM %</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td><strong>No-Timer</strong></td>
+                    <td>98</td>
+                    <td>33</td>
+                    <td>14</td>
+                    <td>145</td>
+                    <td>74.8%</td>
+                    <td>25.2%</td>
+                </tr>
+
+                <tr>
+                    <td><strong>Timer-Correct</strong></td>
+                    <td>97</td>
+                    <td>32</td>
+                    <td>14</td>
+                    <td>143</td>
+                    <td>75.2%</td>
+                    <td>24.8%</td>
+                </tr>
+
+                <tr>
+                    <td><strong>Timer-No-Correct</strong></td>
+                    <td>0</td>
+                    <td>125</td>
+                    <td>18</td>
+                    <td>143</td>
+                    <td>0.0%</td>
+                    <td>100.0%</td>
+                </tr>
+
+            </tbody>
+        </table>
+    </div>
+
+    <div class="comparison-section">
+        <h2>🔍 Threshold Comparison Across Multiple Runs</h2>
+        <p>Each run represents a complete pipeline execution with specific threshold configurations. Compare how different parameters affect the results across all stages.</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Run 1
+(2026-02-06)</th>
+                    <th>Run 2
+(2026-02-11)</th>
+                    <th>Run 3
+(2026-02-12)</th>
+
+                </tr>
+            </thead>
+            <tbody>
+                <tr style="background-color: #667eea; color: white; font-weight: bold;">
+                    <td colspan="4">🔧 THRESHOLDS</td>
+                </tr>
+                <tr style="background-color: #fffacd;">
+                    <th style="text-align: left; padding-left: 20px;">1. Trial-Level Exclusion</th>
+                    <td style="font-weight: 500;">30% invalid</td>
+                    <td style="font-weight: 500;">30% invalid</td>
+                    <td style="font-weight: 500;">30% invalid</td>
+                </tr>
+                <tr style="background-color: #fffacd;">
+                    <th style="text-align: left; padding-left: 20px;">2. Participant-Level Exclusion</th>
+                    <td style="font-weight: 500;">50% excluded trials</td>
+                    <td style="font-weight: 500;">50% excluded trials</td>
+                    <td style="font-weight: 500;">50% excluded trials</td>
+                </tr>
+                <tr style="background-color: #fffacd;">
+                    <th style="text-align: left; padding-left: 20px;">3. Time Window</th>
+                    <td style="font-weight: 500;">1000ms</td>
+                    <td style="font-weight: 500;">1000ms</td>
+                    <td style="font-weight: 500;">1000ms</td>
+                </tr>
+                <tr style="background-color: #fffacd;">
+                    <th style="text-align: left; padding-left: 20px;">4. Validity Threshold</th>
+                    <td style="font-weight: 500;">85% of samples valid</td>
+                    <td style="font-weight: 500;">85% of samples valid</td>
+                    <td style="font-weight: 500;">85% of samples valid</td>
+                </tr>
+                <tr style="background-color: #fffacd;">
+                    <th style="text-align: left; padding-left: 20px;">5. Percentile Threshold</th>
+                    <td style="font-weight: 500;">P25</td>
+                    <td style="font-weight: 500;">P25</td>
+                    <td style="font-weight: 500;">P25</td>
+                </tr>
+                <tr style="height: 10px;">
+                    <td colspan="4" style="border: none; background: none;"></td>
+                </tr>
+                <tr style="background-color: #667eea; color: white; font-weight: bold;">
+                    <td colspan="4">📊 STAGE 1: Quality Filtering</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Total Trials</th>
+                    <td>450</td>
+                    <td>450</td>
+                    <td>450</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Trial-Level Excluded</th>
+                    <td>14 (3.1%)</td>
+                    <td>14 (3.1%)</td>
+                    <td>14 (3.1%)</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Participant-Level Excluded</th>
+                    <td>5 (1.1%)</td>
+                    <td>5 (1.1%)</td>
+                    <td>5 (1.1%)</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Total Excluded</th>
+                    <td>19 (4.2%)</td>
+                    <td>19 (4.2%)</td>
+                    <td>19 (4.2%)</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Kept Trials</th>
+                    <td>431 (95.8%)</td>
+                    <td>431 (95.8%)</td>
+                    <td>431 (95.8%)</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Kept Samples</th>
+                    <td>3,352,244</td>
+                    <td>3,352,244</td>
+                    <td>3,352,244</td>
+                </tr>
+                <tr style="height: 10px;">
+                    <td colspan="4" style="border: none; background: none;"></td>
+                </tr>
+                <tr style="background-color: #667eea; color: white; font-weight: bold;">
+                    <td colspan="4">📊 STAGE 2: ta Detection</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Total Trials</th>
+                    <td>431</td>
+                    <td>431</td>
+                    <td>431</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Trials with ta</th>
+                    <td>387 (89.8%)</td>
+                    <td>387 (89.8%)</td>
+                    <td>387 (89.8%)</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Trials without ta</th>
+                    <td>44 (10.2%)</td>
+                    <td>44 (10.2%)</td>
+                    <td>44 (10.2%)</td>
+                </tr>
+                <tr style="height: 10px;">
+                    <td colspan="4" style="border: none; background: none;"></td>
+                </tr>
+                <tr style="background-color: #667eea; color: white; font-weight: bold;">
+                    <td colspan="4">📊 STAGE 3: Randomness Labeling</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Total Trials</th>
+                    <td>431</td>
+                    <td>431</td>
+                    <td>431</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Total Valid</th>
+                    <td>385</td>
+                    <td>385</td>
+                    <td>385</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">NOT_RANDOM</th>
+                    <td>195 (50.6% of valid)</td>
+                    <td>195 (50.6% of valid)</td>
+                    <td>195 (50.6% of valid)</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">RANDOM</th>
+                    <td>190 (49.4% of valid)</td>
+                    <td>190 (49.4% of valid)</td>
+                    <td>190 (49.4% of valid)</td>
+                </tr>
+                <tr>
+                    <th style="text-align: left; padding-left: 30px; font-weight: normal;">Invalid</th>
+                    <td>46 (10.7% of all)</td>
+                    <td>46 (10.7% of all)</td>
+                    <td>46 (10.7% of all)</td>
+                </tr>
+
+            </tbody>
+        </table>
+    </div>
+
+    <div class="footer">
+        <p>Generated by Data Mining Pipeline</p>
+        <p>© 2026 Master Thesis Project</p>
+    </div>
+</body>
+</html>
