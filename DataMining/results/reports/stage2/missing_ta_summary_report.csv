@@ -1,20 +1,3 @@
-Metric,Value
-Total Trials,431
-Trials WITH ta,387 (89.8%)
-Trials WITHOUT ta,44 (10.2%)
-Detection Success Rate,89.8%
-,
-Failure: Off-Screen (>50%),28 (63.6%)
-Failure: Stayed in Question,9 (20.5%)
-Failure: Minimal Answer_Area (<5%),0 (0.0%)
-Failure: Short Sequences,3 (6.8%)
-Failure: Rapid Switching,4 (9.1%)
-,
-Mean Answer_Area Coverage,6.0%
-Median Answer_Area Coverage,4.3%
-Mean Best Window Coverage,53.0%
-Trials Close to Success (>70%),16 trials
-,
-Participant with Most Missing,participant_4 (15 trials)
-Second Most Missing,participant_16 (7 trials)
-Third Most Missing,participant_12 (4 trials)
+version https://git-lfs.github.com/spec/v1
+oid sha256:073f5587be3fefc134b7c6ebf4934de6d74b4e44cf57a6ce1e56afaf28df0248
+size 613

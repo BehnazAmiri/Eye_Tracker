@@ -1,16 +1,3 @@
-question_id,n_samples,n_participants
-question_1,300264,30
-question_10,241693,30
-question_11,227360,30
-question_12,225881,30
-question_13,224145,30
-question_14,205124,30
-question_15,210160,30
-question_2,229389,30
-question_3,290178,30
-question_4,210081,30
-question_5,252899,30
-question_6,259940,30
-question_7,226039,30
-question_8,235917,30
-question_9,225075,30
+version https://git-lfs.github.com/spec/v1
+oid sha256:ef7a2461265e7b9dc7250c9ca662252b4d91962e56d0d978102b81a11e328c46
+size 374
