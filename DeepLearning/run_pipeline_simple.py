@@ -692,6 +692,9 @@ def run_simple_pipeline(
         else:
             df_filtered = df_labels.copy()
         
+        # Keep a clean reference for snapshot counting (loop overwrites df_filtered with trial data)
+        df_labels_filtered = df_filtered
+        
         # Process each trial and save separately
         saved_trials = 0
         skipped = 0
@@ -720,25 +723,25 @@ def run_simple_pipeline(
                 
                 # STEP 2: Filter AOI (spatial slice on the temporal window)
                 if aoi_filter:
-                    df_filtered = df_tail[df_tail['AOI'].isin(aoi_filter)]
+                    df_trial_aoi = df_tail[df_tail['AOI'].isin(aoi_filter)]
                 else:
-                    df_filtered = df_tail
+                    df_trial_aoi = df_tail
                 
                 # STEP 3: Quality check - skip if too few samples in AOI during time window
-                if len(df_filtered) < 10:
+                if len(df_trial_aoi) < 10:
                     skipped += 1
                     continue
                 
                 # Filter feature columns (if specified)
                 if feature_columns:
                     # Keep only feature columns
-                    cols_to_keep = [col for col in feature_columns if col in df_filtered.columns]
-                    df_final = df_filtered[cols_to_keep].copy()
+                    cols_to_keep = [col for col in feature_columns if col in df_trial_aoi.columns]
+                    df_final = df_trial_aoi[cols_to_keep].copy()
                 else:
                     # Keep all columns but remove unnecessary metadata
                     cols_to_drop = ['participant_id', 'question_id', 'part', 'is_valid', 
                                    'AOI', 'randomness_label']
-                    df_final = df_filtered.drop(columns=[c for c in cols_to_drop if c in df_filtered.columns]).copy()
+                    df_final = df_trial_aoi.drop(columns=[c for c in cols_to_drop if c in df_trial_aoi.columns]).copy()
                 
                 # INJECT LABEL
                 df_final['randomness_label'] = row['randomness_label']
@@ -769,6 +772,43 @@ def run_simple_pipeline(
             print(f"  {list(sample_df.columns)}")
             
             csv_path = csv_output_dir  # Return directory path
+
+            # ── Write dm_config_snapshot.json ──────────────────────────────
+            try:
+                import configparser, datetime as _dt
+                dm_cfg = configparser.ConfigParser()
+                dm_cfg_path = Path(__file__).parent.parent / 'DataMining' / 'config.ini'
+                dm_cfg.read(str(dm_cfg_path), encoding='utf-8')
+
+                _nr = int((df_labels_filtered['randomness_label'] == 'NOT_RANDOM').sum())
+                _rd = int((df_labels_filtered['randomness_label'] == 'RANDOM').sum())
+                _total = _nr + _rd
+                _parts = df_labels_filtered['participant_id'].nunique()
+
+                snapshot_data = {
+                    'generated_at': _dt.datetime.now().isoformat(),
+                    'thresholds': {
+                        'stage1_invalid_pct_threshold':         dm_cfg.getfloat('Analysis', 'stage1_invalid_pct_threshold',        fallback=0.30),
+                        'stage1_participant_exclusion_threshold': dm_cfg.getfloat('Analysis', 'stage1_participant_exclusion_threshold', fallback=0.50),
+                        'ta_window_ms':                          dm_cfg.getint(  'STAGE2_TA', 'ta_window_ms',                        fallback=1000),
+                        'ta_answer_coverage_threshold':          dm_cfg.getfloat('STAGE2_TA', 'ta_answer_coverage_threshold',        fallback=0.85),
+                        'stage3_threshold_method':               'percentile',
+                        'stage3_threshold_percentile':           dm_cfg.getint(  'Analysis',  'stage3_threshold_percentile',         fallback=25),
+                    },
+                    'output_summary': {
+                        'total_trials': _total,
+                        'participants': _parts,
+                        'NOT_RANDOM':   _nr,
+                        'RANDOM':       _rd,
+                    }
+                }
+                snap_file = csv_output_dir / 'dm_config_snapshot.json'
+                with open(snap_file, 'w', encoding='utf-8') as _f:
+                    json.dump(snapshot_data, _f, indent=2)
+                print(f"  [OK] dm_config_snapshot.json written")
+            except Exception as _e:
+                print(f"  [WARN] Could not write dm_config_snapshot: {_e}")
+            # ───────────────────────────────────────────────────────────────
         else:
             print(f"[WARN] No data to export (all trials skipped)")
             csv_path = None
@@ -959,9 +999,16 @@ def run_simple_pipeline(
         # Apply sqrt to make weights less extreme
         import math
         class_weights = (math.sqrt(raw_weight_0), math.sqrt(raw_weight_1))
+        auto_pos_weight = class_weights[1] / class_weights[0]
         
         print(f"  Train distribution: class_0={n_class_0}, class_1={n_class_1}")
         print(f"  Class weights (sqrt-balanced): [class_0: {class_weights[0]:.3f}, class_1: {class_weights[1]:.3f}]")
+
+        # Override with manual pos_weight from config if specified (> 0)
+        manual_pos_weight = training_config.get('pos_weight', None)
+        if manual_pos_weight and manual_pos_weight > 0:
+            class_weights = (1.0, manual_pos_weight)
+            print(f"  [OVERRIDE] Manual pos_weight from config: {manual_pos_weight} (auto-computed was {auto_pos_weight:.3f})")
         
         trainer = SimpleTrainer(
             model=model,

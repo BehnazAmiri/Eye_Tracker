@@ -100,10 +100,18 @@ class ThresholdComparison:
             return None
         
         runs = self.data['runs']
-        
+
+        def col_header(i, r):
+            t = r['thresholds']
+            return (
+                f"Config {i+1}<br>"
+                f"<small>P{t['stage3_percentile']} · {t['ta_window_ms']} ms · cov {t['ta_coverage']:.0%}"
+                f"<br>excl-trial {t['stage1_invalid_pct']:.0%} · excl-part {t['stage1_participant_exclusion']:.0%}</small>"
+            )
+
         # Unified comparison table
         comparison_data = {
-            'headers': ['Metric'] + [f"Run {i+1}\n({r['timestamp'][:10]})" for i, r in enumerate(runs)],
+            'headers': ['Metric'] + [col_header(i, r) for i, r in enumerate(runs)],
             'rows': []
         }
         
@@ -111,37 +119,37 @@ class ThresholdComparison:
         all_metrics = [
             # Thresholds section
             ('🔧 THRESHOLDS', None, 'section'),
-            ('1. Trial-Level Exclusion', lambda r: f"{r['thresholds']['stage1_invalid_pct']:.0%} invalid", 'threshold'),
-            ('2. Participant-Level Exclusion', lambda r: f"{r['thresholds']['stage1_participant_exclusion']:.0%} excluded trials", 'threshold'),
-            ('3. Time Window', lambda r: f"{r['thresholds']['ta_window_ms']}ms", 'threshold'),
-            ('4. Validity Threshold', lambda r: f"{r['thresholds']['ta_coverage']:.0%} of samples valid", 'threshold'),
-            ('5. Percentile Threshold', lambda r: f"P{r['thresholds']['stage3_percentile']}", 'threshold'),
+            ('Randomness Percentile  (P-th of answer times → RANDOM)', lambda r: f"P{r['thresholds']['stage3_percentile']}", 'threshold'),
+            ('Answer-Window Size  (gaze must stay on choices for …)', lambda r: f"{r['thresholds']['ta_window_ms']} ms", 'threshold'),
+            ('Answer-Window Coverage  (min % of samples on choice AOI)', lambda r: f"{r['thresholds']['ta_coverage']:.0%}", 'threshold'),
+            ('Trial Exclusion  (max % invalid gaze samples per trial)', lambda r: f"{r['thresholds']['stage1_invalid_pct']:.0%}", 'threshold'),
+            ('Participant Exclusion  (max % bad trials per participant)', lambda r: f"{r['thresholds']['stage1_participant_exclusion']:.0%}", 'threshold'),
             
             # Stage 1 results
             ('', None, 'separator'),
-            ('📊 STAGE 1: Quality Filtering', None, 'section'),
-            ('Total Trials', lambda r: f"{r['stage1']['total_trials']}", 'data'),
-            ('Trial-Level Excluded', lambda r: f"{r['stage1']['excluded_trials_trial_level']} ({r['stage1']['excluded_trials_trial_level_pct']:.1f}%)", 'data'),
-            ('Participant-Level Excluded', lambda r: f"{r['stage1']['excluded_trials_participant_level']} ({r['stage1']['excluded_trials_participant_level_pct']:.1f}%)", 'data'),
-            ('Total Excluded', lambda r: f"{r['stage1']['excluded_trials']} ({r['stage1']['excluded_trials_pct']:.1f}%)", 'data'),
-            ('Kept Trials', lambda r: f"{r['stage1']['kept_trials']} ({r['stage1']['kept_trials_pct']:.1f}%)", 'data'),
-            ('Kept Samples', lambda r: f"{r['stage1']['kept_samples']:,}", 'data'),
+            ('📊 STAGE 1: Gaze Quality Filtering', None, 'section'),
+            ('Total trials collected', lambda r: f"{r['stage1']['total_trials']}", 'data'),
+            ('Excluded — too many invalid gaze samples (trial-level)', lambda r: f"{r['stage1']['excluded_trials_trial_level']} ({r['stage1']['excluded_trials_trial_level_pct']:.1f}%)", 'data'),
+            ('Excluded — participant had too many bad trials (participant-level)', lambda r: f"{r['stage1']['excluded_trials_participant_level']} ({r['stage1']['excluded_trials_participant_level_pct']:.1f}%)", 'data'),
+            ('Total excluded trials', lambda r: f"{r['stage1']['excluded_trials']} ({r['stage1']['excluded_trials_pct']:.1f}%)", 'data'),
+            ('Kept trials (passed quality filter)', lambda r: f"{r['stage1']['kept_trials']} ({r['stage1']['kept_trials_pct']:.1f}%)", 'data'),
+            ('Kept gaze samples', lambda r: f"{r['stage1']['kept_samples']:,}", 'data'),
             
             # Stage 2 results
             ('', None, 'separator'),
-            ('📊 STAGE 2: ta Detection', None, 'section'),
-            ('Total Trials', lambda r: f"{r['stage2']['total_trials']}", 'data'),
-            ('Trials with ta', lambda r: f"{r['stage2']['trials_with_ta']} ({r['stage2']['ta_detection_rate']:.1f}%)", 'data'),
-            ('Trials without ta', lambda r: f"{r['stage2']['trials_without_ta']} ({100-r['stage2']['ta_detection_rate']:.1f}%)", 'data'),
+            ('📊 STAGE 2: Answer-Onset (tₐ) Detection', None, 'section'),
+            ('Trials entering this stage', lambda r: f"{r['stage2']['total_trials']}", 'data'),
+            ('Trials where tₐ was detected (gaze reached choices in time)', lambda r: f"{r['stage2']['trials_with_ta']} ({r['stage2']['ta_detection_rate']:.1f}%)", 'data'),
+            ('Trials where tₐ was NOT detected (no stable gaze on choices)', lambda r: f"{r['stage2']['trials_without_ta']} ({100-r['stage2']['ta_detection_rate']:.1f}%)", 'data'),
             
             # Stage 3 results
             ('', None, 'separator'),
             ('📊 STAGE 3: Randomness Labeling', None, 'section'),
-            ('Total Trials', lambda r: f"{r['stage3']['total_trials']}", 'data'),
-            ('Total Valid', lambda r: f"{r['stage3']['total_valid']}", 'data'),
-            ('NOT_RANDOM', lambda r: f"{r['stage3']['not_random']} ({r['stage3']['not_random_pct']:.1f}% of valid)", 'data'),
-            ('RANDOM', lambda r: f"{r['stage3']['random']} ({r['stage3']['random_pct']:.1f}% of valid)", 'data'),
-            ('Invalid', lambda r: f"{r['stage3']['invalid']} ({r['stage3']['invalid_pct']:.1f}% of all)", 'data'),
+            ('Trials entering this stage', lambda r: f"{r['stage3']['total_trials']}", 'data'),
+            ('Labeled trials (have tₐ → can be classified)', lambda r: f"{r['stage3']['total_valid']}", 'data'),
+            ('NOT_RANDOM  (answer time ≥ percentile threshold → deliberate)', lambda r: f"{r['stage3']['not_random']} ({r['stage3']['not_random_pct']:.1f}% of labeled)", 'data'),
+            ('RANDOM       (answer time < percentile threshold → fast/random)', lambda r: f"{r['stage3']['random']} ({r['stage3']['random_pct']:.1f}% of labeled)", 'data'),
+            ('INVALID      (no tₐ → cannot classify)', lambda r: f"{r['stage3']['invalid']} ({r['stage3']['invalid_pct']:.1f}% of all)", 'data'),
         ]
         
         for metric_info in all_metrics:

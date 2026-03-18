@@ -599,6 +599,19 @@ class SimpleGUI:
                 
                 sys.stdout = old_stdout
                 self.last_result = result
+
+                # Auto-rebuild reports after successful run
+                try:
+                    import subprocess
+                    python_exe = sys.executable
+                    dl_dir = Path(__file__).parent
+                    self._log("\n[AUTO] Rebuilding reports...")
+                    subprocess.run([python_exe, str(dl_dir / 'scripts' / 'build_report.py')], check=True, capture_output=True, cwd=str(dl_dir))
+                    subprocess.run([python_exe, str(dl_dir / 'scripts' / 'build_results_report.py')], check=True, capture_output=True, cwd=str(dl_dir))
+                    self._log("[AUTO] results_report.html updated.")
+                except Exception as report_err:
+                    self._log(f"[WARN] Report rebuild failed: {report_err}")
+
                 messagebox.showinfo("Success", success_msg)
                 
             except Exception as e:

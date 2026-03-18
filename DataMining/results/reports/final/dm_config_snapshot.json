@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-03-11T10:57:36.237325",
+  "thresholds": {
+    "stage1_invalid_pct_threshold": 0.3,
+    "stage1_participant_exclusion_threshold": 0.5,
+    "ta_window_ms": 1000,
+    "ta_answer_coverage_threshold": 0.85,
+    "stage3_threshold_method": "percentile",
+    "stage3_threshold_percentile": 25
+  },
+  "output_summary": {
+    "total_trials": 385,
+    "participants": 28,
+    "NOT_RANDOM": 195,
+    "RANDOM": 190
+  }
+}

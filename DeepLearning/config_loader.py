@@ -152,6 +152,7 @@ class Config:
             'learning_rate_hybrid': section.getfloat('learning_rate_hybrid'),
             'learning_rate_transformer': section.getfloat('learning_rate_transformer'),
             'weight_decay': section.getfloat('weight_decay'),
+            'pos_weight': section.getfloat('pos_weight', fallback=None),
             'device': section.get('device')
         }
     
@@ -293,6 +294,7 @@ class Config:
             'learning_rate': self.training[f'learning_rate_{model_type}'],
             'weight_decay': self.training['weight_decay'],
             'early_stopping_patience': self.training['early_stopping_patience'],
+            'pos_weight': self.training.get('pos_weight', None),
             'test_size': self.data['test_size']
         }
     
